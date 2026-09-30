@@ -50,6 +50,9 @@ main() {
   )
   codex_args=(--dangerously-bypass-approvals-and-sandbox)
 
+  # Codex's installation is read-only inside Seatbelt; upgrades must run outside.
+  codex_args+=(--config check_for_update_on_startup=false)
+
   # ChatGPT.app's Node REPL normally asks Codex to create a child Seatbelt
   # sandbox. macOS rejects nested sandbox-exec calls, so run that child
   # directly; it still inherits xcodex's outer Seatbelt profile.

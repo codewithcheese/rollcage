@@ -141,6 +141,11 @@ Rejection is fatal: denying a config (or any pack it references — see [Packs](
 - Trust ledger: `~/.config/xcodex/trusted`
 - Base fragments: `base-common.sb` + `base-codex.sb`
 
+Sandboxed launches pass `--config check_for_update_on_startup=false` to skip
+Codex's startup update check and upgrade prompt, since its installation is
+read-only. This also disables startup update notifications. Upgrade Codex
+outside the sandbox; the override does not change your saved Codex config.
+
 Its base profile grants Codex access to `~/.codex` state, read-only access to
 the documented user skill location at `~/.agents/skills`, and its current CLI
 install location under `~/.nvm`, instead of Claude-specific paths like
