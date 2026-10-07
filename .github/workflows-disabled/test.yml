@@ -3,30 +3,25 @@ on:
   push:
     branches: [main]
     paths:
-      - 'base.sb'
+      - 'base-claude.sb'
       - 'base-common.sb'
       - 'base-codex.sb'
       - 'base-pi.sb'
       - 'base-omp.sb'
       - 'base-opencode.sb'
-      - 'xclaude'
-      - 'xcodex'
-      - 'xpi'
-      - 'xomp'
-      - 'xopencode'
-      - 'xclaude.lib.zsh'
-      - 'xcodex.lib.zsh'
-      - 'xpi.lib.zsh'
-      - 'xomp.lib.zsh'
-      - 'xopencode.lib.zsh'
-      - 'xsandbox.lib.zsh'
-      - 'test_xclaude.bash'
+      - 'rollcage'
+      - 'rollcage.lib.zsh'
+      - 'adapters/**'
+      - 'base-protections.sb'
+      - 'test_dispatch.zsh'
+      - 'test_protections_sandbox.zsh'
+      - 'test_rollcage.bash'
       - 'test_trust_gate.zsh'
       - 'test_sandbox.zsh'
-      - 'test_xcodex_sandbox.zsh'
-      - 'test_xpi_sandbox.zsh'
-      - 'test_xomp_sandbox.zsh'
-      - 'test_xopencode_sandbox.zsh'
+      - 'test_codex_sandbox.zsh'
+      - 'test_pi_sandbox.zsh'
+      - 'test_omp_sandbox.zsh'
+      - 'test_opencode_sandbox.zsh'
       - 'toolchains/postgres.sb'
       - 'toolchains/postgres.test.zsh'
       - 'toolchains/metal.sb'
@@ -36,30 +31,25 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'base.sb'
+      - 'base-claude.sb'
       - 'base-common.sb'
       - 'base-codex.sb'
       - 'base-pi.sb'
       - 'base-omp.sb'
       - 'base-opencode.sb'
-      - 'xclaude'
-      - 'xcodex'
-      - 'xpi'
-      - 'xomp'
-      - 'xopencode'
-      - 'xclaude.lib.zsh'
-      - 'xcodex.lib.zsh'
-      - 'xpi.lib.zsh'
-      - 'xomp.lib.zsh'
-      - 'xopencode.lib.zsh'
-      - 'xsandbox.lib.zsh'
-      - 'test_xclaude.bash'
+      - 'rollcage'
+      - 'rollcage.lib.zsh'
+      - 'adapters/**'
+      - 'base-protections.sb'
+      - 'test_dispatch.zsh'
+      - 'test_protections_sandbox.zsh'
+      - 'test_rollcage.bash'
       - 'test_trust_gate.zsh'
       - 'test_sandbox.zsh'
-      - 'test_xcodex_sandbox.zsh'
-      - 'test_xpi_sandbox.zsh'
-      - 'test_xomp_sandbox.zsh'
-      - 'test_xopencode_sandbox.zsh'
+      - 'test_codex_sandbox.zsh'
+      - 'test_pi_sandbox.zsh'
+      - 'test_omp_sandbox.zsh'
+      - 'test_opencode_sandbox.zsh'
       - 'toolchains/postgres.sb'
       - 'toolchains/postgres.test.zsh'
       - 'toolchains/metal.sb'
@@ -73,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash test_xclaude.bash
+      - run: bash test_rollcage.bash
 
   trust-gate:
     name: Trust gate integration
@@ -82,6 +72,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y zsh
       - run: zsh test_trust_gate.zsh
+      - run: zsh test_dispatch.zsh
 
   sandbox-base:
     name: "Sandbox: base profile"
@@ -95,14 +86,14 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - run: zsh test_xcodex_sandbox.zsh
+      - run: zsh test_codex_sandbox.zsh
 
   sandbox-pi:
     name: "Sandbox: Pi base profile"
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - run: zsh test_xpi_sandbox.zsh
+      - run: zsh test_pi_sandbox.zsh
 
   sandbox-omp:
     name: "Sandbox: Oh My Pi base profile"
@@ -111,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: curl -fsSL https://omp.sh/install | sh -s -- --binary
       - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - run: zsh test_xomp_sandbox.zsh
+      - run: zsh test_omp_sandbox.zsh
 
   sandbox-opencode:
     name: "Sandbox: OpenCode base profile"
@@ -120,7 +111,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
       - run: echo "$HOME/.opencode/bin" >> "$GITHUB_PATH"
-      - run: zsh test_xopencode_sandbox.zsh
+      - run: zsh test_opencode_sandbox.zsh
 
   sandbox-postgres:
     name: "Sandbox toolchain: PostgreSQL"
@@ -136,3 +127,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: zsh test_sandbox.zsh --toolchain metal
+
+  sandbox-protections:
+    name: "Sandbox: final control-file protections"
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: zsh test_protections_sandbox.zsh

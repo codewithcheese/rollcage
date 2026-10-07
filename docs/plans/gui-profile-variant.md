@@ -1,9 +1,13 @@
 # Add a permissive "gui" profile variant for Electron+libghostty dev
 
+Status: unimplemented design notes. The proposed profile selector must be handled
+by the dispatcher before selecting the Claude adapter; existing CLI arguments
+remain pass-through. Final `base-protections.sb` denies still apply.
+
 ## Context
 
-Today `xclaude` launches `claude --dangerously-skip-permissions` (bypass mode) with the
-Seatbelt sandbox as the *only* safety boundary (`xclaude:79`). The user is using Claude to
+Today `rollcage claude` launches `claude --dangerously-skip-permissions` (bypass mode) with the
+Seatbelt sandbox as the *only* safety boundary (`adapters/claude.zsh`). The user is using Claude to
 develop an **Electron app that embeds libghostty**. That means Claude — running inside the
 sandbox — must be able to run the dev server and **launch the Electron GUI** (Chromium +
 Metal via libghostty) from within the sandbox.
@@ -21,18 +25,18 @@ Two changes are needed:
    detail; nested Chromium sandboxing is intentionally not attempted).
 
 Delivery (per user): a **more permissive base-profile variant** selected from the existing
-`xclaude` launcher via an env var. Keep `xclaude` generic — no app-specific bundle IDs baked in.
+`rollcage` launcher via an env var. Keep `rollcage` generic — no app-specific bundle IDs baked in.
 
 ## Approach
 
-Selection knob: `XCLAUDE_PROFILE` env var. Unset/`default` → current behavior. `gui` →
+Selection knob: `ROLLCAGE_PROFILE` env var. Unset/`default` → current behavior. `gui` →
 append `base-gui.sb` to the base fragments **and** swap the permission flag to
 `--permission-mode auto`. Unknown values error out (no silent misconfig).
 
 ### 1. New file: `base-gui.sb` (additive fragment)
 
-Concatenated after `base-common.sb` + `base.sb` (the assembler just `cat`s the array —
-`xsandbox.lib.zsh:31-38`). Each rule gets a comment (repo convention). Grants **read+write**
+Concatenated after `base-common.sb` + `base-claude.sb` (the assembler just `cat`s the array —
+`__rollcage_read_base_profile`). Each rule gets a comment (repo convention). Grants **read+write**
 (write does not imply read in SBPL, so both verbs) on the GUI-runtime subpaths Electron/
 Chromium/libghostty use:
 
@@ -56,39 +60,39 @@ No new `process-exec`, `mach`, `iokit`, or `network` rules are required — base
 
 ### 2. Launcher wiring
 
-**`xclaude.lib.zsh`** (`__xclaude_sync`, around line 14): conditionally append the fragment.
+**`rollcage.lib.zsh`** (`__rollcage_init`, around line 14): conditionally append the fragment.
 ```zsh
-__xsandbox_base_profiles=("${__xclaude_dir}/base-common.sb" "${__xclaude_dir}/base.sb")
-if [[ "${XCLAUDE_PROFILE:-default}" == "gui" ]]; then
-  __xsandbox_base_profiles+=("${__xclaude_dir}/base-gui.sb")
+__rollcage_base_profiles=("${__rollcage_dir}/base-common.sb" "${__rollcage_dir}/base-${cli}.sb")
+if [[ "$cli" == "claude" && "${ROLLCAGE_PROFILE:-default}" == "gui" ]]; then
+  __rollcage_base_profiles+=("${__rollcage_dir}/base-gui.sb")
 fi
 ```
 
-**`xclaude`** (around line 79): select permission flag via an array, and validate the env var
+**`adapters/claude.zsh`** (`__rollcage_launch_claude`): select permission flag via an array, and validate the env var
 near the top of `main()` (error on unknown value). Replace the hardcoded
 `claude --dangerously-skip-permissions ...` with:
 ```zsh
 local -a perm_args=(--dangerously-skip-permissions)
-[[ "${XCLAUDE_PROFILE:-default}" == "gui" ]] && perm_args=(--permission-mode auto)
+[[ "${ROLLCAGE_PROFILE:-default}" == "gui" ]] && perm_args=(--permission-mode auto)
 # ...
--- claude "${perm_args[@]}" --plugin-dir "${__xclaude_dir}" "${claude_args[@]}"
+-- claude "${perm_args[@]}" --plugin-dir "${__rollcage_dir}" "${claude_args[@]}"
 ```
 The reload-on-denial loop, plugin dir, and denial-log hook are unchanged.
 
 ### 3. Tests
 
-- New integration test `test_xclaude_gui_sandbox.zsh` (mirrors `test_xcodex_sandbox.zsh` /
-  `test_xpi_sandbox.zsh` precedent). Assemble with `XCLAUDE_PROFILE=gui` and assert:
+- New integration test `test_rollcage_gui_sandbox.zsh` (mirrors `test_codex_sandbox.zsh` /
+  `test_pi_sandbox.zsh` precedent). Assemble with `ROLLCAGE_PROFILE=gui` and assert:
   - write **allowed** to `~/Library/Application Support/<tmp>` and `~/Library/Caches/<tmp>`
   - write **denied** to `~/Library/Application Support/com.apple.TCC/<tmp>`
   - write **denied** to `~/Library/LaunchAgents/<tmp>` (not granted)
   - `~/.ssh` read still **denied** (base isolation intact)
   - clean up all fixtures.
-- No DSL change → `test_xclaude.bash` and `toolchains/*` untouched.
+- No DSL change → `test_rollcage.bash` and `toolchains/*` untouched.
 
 ### 4. Docs
 
-- `README.md`: document the `XCLAUDE_PROFILE=gui` variant — what it adds and that it runs
+- `README.md`: document the `ROLLCAGE_PROFILE=gui` variant — what it adds and that it runs
   Claude in `auto` mode.
 - `CLAUDE.md` (repo): add `base-gui.sb` to the architecture file list and an "Profile
   variants" note under the SBPL section; record the `auto`-mode + `--no-sandbox` decisions.
@@ -97,17 +101,17 @@ The reload-on-denial loop, plugin dir, and denial-log hook are unchanged.
 
 ## Verification
 
-1. `bash test_xclaude.bash` — DSL pipeline unaffected (sanity).
-2. `zsh test_xclaude_gui_sandbox.zsh` — new gui-profile assertions pass.
+1. `bash test_rollcage.bash` — DSL pipeline unaffected (sanity).
+2. `zsh test_rollcage_gui_sandbox.zsh` — new gui-profile assertions pass.
 3. `zsh test_sandbox.zsh --toolchain none` — base profile unchanged/green.
-4. Manual smoke: `XCLAUDE_PROFILE=gui xclaude` in the Electron+libghostty project, confirm
+4. Manual smoke: `ROLLCAGE_PROFILE=gui rollcage` in the Electron+libghostty project, confirm
    Claude starts in `auto` mode and that `npm run dev` + launching the Electron app
    (`electron . --no-sandbox`) renders a window with the embedded terminal. If a denial
-   appears, the denial-log hook surfaces the path to fold into `base-gui.sb` or project `.xclaude`.
+   appears, the denial-log hook surfaces the path to fold into `base-gui.sb` or project `.rollcage`.
 
 ## Open trade-off (flagged, not blocking)
 
 `base-gui.sb` grants broad `~/Library/{Application Support,Caches,...}` read+write rather
 than scoping to the app's bundle name, because the custom app's product name isn't known
 here. If you'd prefer tighter scoping, give me the app's `userData` dir / product name and
-I'll narrow the subpaths and move the rest to project `.xclaude`.
+I'll narrow the subpaths and move the rest to project `.rollcage`.

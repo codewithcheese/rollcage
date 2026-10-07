@@ -1,16 +1,16 @@
 {
-  "name": "xclaude-marketplace",
+  "name": "rollcage-marketplace",
   "owner": {
     "name": "codewithcheese",
     "url": "https://github.com/codewithcheese"
   },
   "plugins": [
     {
-      "name": "xclaude",
-      "description": "xclaude sandbox skills and hooks",
+      "name": "rollcage",
+      "description": "rollcage sandbox skills and hooks",
       "source": {
         "source": "github",
-        "repo": "codewithcheese/xclaude"
+        "repo": "codewithcheese/rollcage"
       },
       "version": "1.0.0"
     }

@@ -21,10 +21,10 @@
 (allow file-read-data
   (subpath (string-append (param "HOME") "/.claude")))
 
-;; xclaude user config — read-only so the debug-sandbox skill
-;; can see which toolchains and rules are already active
+;; Claude trust ledger and snapshots — read-only for sandbox debugging.
+;; Shared user config and packs are readable through base-common.sb.
 (allow file-read-data
-  (subpath (string-append (param "HOME") "/.config/xclaude")))
+  (subpath (string-append (param "HOME") "/.config/rollcage/trust/claude")))
 
 ;; Claude Code checks for this file at home root on startup
 (allow file-read-data
@@ -38,13 +38,13 @@
 (allow file-read-data
   (subpath (string-append (param "HOME") "/Library/Keychains")))
 
-;; xclaude plugin — loaded via --plugin-dir, needs read for manifest,
+;; rollcage plugin — loaded via --plugin-dir, needs read for manifest,
 ;; hooks, skills; exec for the hook script
 (allow file-read-data
-  (subpath (string-append (param "XCLAUDE_DIR") "/.claude-plugin"))
-  (subpath (string-append (param "XCLAUDE_DIR") "/plugin")))
+  (subpath (string-append (param "ROLLCAGE_DIR") "/.claude-plugin"))
+  (subpath (string-append (param "ROLLCAGE_DIR") "/plugin")))
 (allow process-exec
-  (literal (string-append (param "XCLAUDE_DIR") "/plugin/hooks/sandbox-denial-hook.sh")))
+  (literal (string-append (param "ROLLCAGE_DIR") "/plugin/hooks/sandbox-denial-hook.sh")))
 
 ;; ============================================================
 ;; Claude-specific write permissions
@@ -60,4 +60,4 @@
 
 ;; Sandbox config — prevents privilege escalation on next launch
 (deny file-write*
-  (literal (string-append (param "PROJECT_DIR") "/.xclaude")))
+  (literal (string-append (param "PROJECT_DIR") "/.rollcage")))

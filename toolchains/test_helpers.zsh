@@ -12,7 +12,7 @@
 
 # These must be set by the runner before sourcing:
 #   PROJECT_DIR, TMPDIR_RESOLVED, CACHE_DIR, HOME_DIR
-#   __xclaude_trust, __xclaude_assemble (from xclaude.lib.zsh)
+#   __rollcage_trust, __rollcage_assemble (from rollcage.lib.zsh)
 
 __tc_profile_path=""
 __tc_fixtures=()
@@ -20,14 +20,14 @@ __tc_fixtures=()
 tc_setup() {
   local tc_name="$1"
 
-  # Write .xclaude and pre-trust it
-  echo "tool ${tc_name}" > "${PROJECT_DIR}/.xclaude"
-  __xclaude_trust "${PROJECT_DIR}/.xclaude"
+  # Write .rollcage and pre-trust it
+  echo "tool ${tc_name}" > "${PROJECT_DIR}/.rollcage"
+  __rollcage_trust "${PROJECT_DIR}/.rollcage"
 
   local tc_profile
-  tc_profile="$(__xclaude_assemble "$PROJECT_DIR")"
-  __tc_profile_path="${TMPDIR_RESOLVED}/xclaude-tc-${tc_name}-$$.sb"
-  echo "$tc_profile" > "$__tc_profile_path"
+  tc_profile="$(__rollcage_assemble "$PROJECT_DIR")"
+  __tc_profile_path="${TMPDIR_RESOLVED}/rollcage-claude-tc-${tc_name}-$$.sb"
+  printf '%s\n' "$tc_profile" > "$__tc_profile_path"
 }
 
 tc_sandboxed() {
@@ -40,7 +40,7 @@ tc_sandboxed() {
     -D "CACHE_DIR=${CACHE_DIR}" \
     -D "VOLATILE_DIR=${VOLATILE_DIR}" \
     -D "HOME=${HOME_DIR}" \
-    -D "XCLAUDE_DIR=${XCLAUDE_DIR}" \
+    -D "ROLLCAGE_DIR=${ROLLCAGE_DIR}" \
     -f "$__tc_profile_path" \
     -- "$@"
 }
@@ -56,7 +56,7 @@ tc_fixture_dir() {
 
 tc_fixture_file() {
   local path="$1"
-  local content="${2:-xclaude-test-fixture}"
+  local content="${2:-rollcage-claude-test-fixture}"
   local dir="${path%/*}"
   tc_fixture_dir "$dir"
   if [[ ! -f "$path" ]]; then
@@ -77,7 +77,7 @@ tc_cleanup() {
     fi
   done
   __tc_fixtures=()
-  /bin/rm -f "${PROJECT_DIR}/.xclaude"
+  /bin/rm -f "${PROJECT_DIR}/.rollcage"
 }
 
 tc_has_cmd() {

@@ -1,11 +1,6 @@
-#!/bin/zsh
-# xomp — sandboxed Oh My Pi coding agent launcher
-# Usage: xomp [omp args...]
+# omp adapter for rollcage. Sourced by the dispatcher; no load-time effects.
 
-__xomp_dir="${0:A:h}"
-source "${__xomp_dir}/xomp.lib.zsh"
-
-main() {
+__rollcage_launch_omp() {
   local tmpdir="${TMPDIR:-/private/tmp}"
   local home_dir="$(readlink -f "${HOME}")"
   local project_dir="$(readlink -f "${PWD}")"
@@ -59,7 +54,7 @@ main() {
   # OMP activates each XDG category independently only when its app/profile
   # root already exists and the default derived agent directory is active.
   # The app roots are still passed when absent so `omp config init-xdg` can
-  # create them from inside xomp; they never widen to the surrounding XDG home.
+  # create them from inside rollcage omp; they never widen to the surrounding XDG home.
   local xdg_value xdg_app_root xdg_profile_root
   if [[ -n "${XDG_DATA_HOME:-}" ]]; then
     xdg_value="${XDG_DATA_HOME}"
@@ -95,29 +90,19 @@ main() {
     fi
   fi
 
-  if [[ ! -f "${__xomp_dir}/base-common.sb" || ! -f "${__xomp_dir}/base-omp.sb" ]]; then
-    echo "xomp: base profile fragments not found at ${__xomp_dir}/base-common.sb and ${__xomp_dir}/base-omp.sb" >&2
-    return 1
-  fi
-
   local omp_bin
   if ! omp_bin="$(command -v omp 2>/dev/null)"; then
-    echo "xomp: omp not found in PATH" >&2
+    echo "rollcage omp: omp not found in PATH" >&2
     return 127
   fi
   omp_bin="$(readlink -f "$omp_bin")"
 
-  if ! command -v sandbox-exec &>/dev/null; then
-    echo "xomp: sandbox-exec not found; refusing to run OMP with --auto-approve outside Seatbelt" >&2
-    return 1
-  fi
+  local rollcage_dir_resolved="$(readlink -f "${__rollcage_dir}")"
+  local assembled_profile profile_path rc=0
 
-  local xomp_dir_resolved="$(readlink -f "${__xomp_dir}")"
-  local profile profile_path rc=0
-
-  profile="$(__xomp_assemble "$project_dir")" || return 1
-  profile_path="${tmpdir}/xomp-$$.sb"
-  echo "$profile" > "$profile_path"
+  assembled_profile="$(__rollcage_assemble "$project_dir")" || return 1
+  profile_path="${tmpdir}/rollcage-omp-$$.sb"
+  printf '%s\n' "$assembled_profile" > "$profile_path"
 
   local -a sandbox_args
   sandbox_args=(
@@ -126,7 +111,7 @@ main() {
     -D "CACHE_DIR=${cache_dir}"
     -D "VOLATILE_DIR=${volatile_dir}"
     -D "HOME=${home_dir}"
-    -D "XOMP_DIR=${xomp_dir_resolved}"
+    -D "ROLLCAGE_DIR=${rollcage_dir_resolved}"
     -D "OMP_CONFIG_ROOT=${omp_config_root}"
     -D "OMP_AGENT_DIR=${omp_agent_dir}"
     -D "OMP_DATA_ROOT=${omp_data_root}"
@@ -141,12 +126,10 @@ main() {
   # Seatbelt is the permission boundary, so bypass OMP's application-level
   # approval prompts. OAuth callbacks and API traffic use the shared profile's
   # network access; credentials remain in ~/.omp/agent/agent.db.
-  env XCLAUDE_ACTIVE=1 XOMP_ACTIVE=1 \
+  env ROLLCAGE_ACTIVE=1 ROLLCAGE_CLI=omp \
     sandbox-exec "${sandbox_args[@]}" -- "$omp_bin" --auto-approve "$@"
   rc=$?
 
   rm -f "$profile_path"
   return $rc
 }
-
-main "$@"

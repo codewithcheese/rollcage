@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
     return 1;
 }
 EOF
-cat "${SCRIPT_DIR}/base-common.sb" "${SCRIPT_DIR}/base.sb" > "$__metal_base"
+cat "${SCRIPT_DIR}/base-common.sb" "${SCRIPT_DIR}/base-claude.sb" > "$__metal_base"
 
 __metal_with_base() {
   # tc_sandboxed uses this dynamically scoped profile path with the same params.
@@ -70,7 +70,7 @@ fi
 
 t "metal: cache remains writable by child processes"
 expect_success "allowed" tc_sandboxed /bin/sh -c \
-  "touch '${CACHE_DIR}/com.apple.metalfe/xclaude-metal-test-$$' && rm '${CACHE_DIR}/com.apple.metalfe/xclaude-metal-test-$$'"
+  "touch '${CACHE_DIR}/com.apple.metalfe/rollcage-claude-metal-test-$$' && rm '${CACHE_DIR}/com.apple.metalfe/rollcage-claude-metal-test-$$'"
 
 t "metal: ~/.ssh remains blocked"
 expect_fail "blocked" tc_sandboxed cat "${HOME}/.ssh/known_hosts"

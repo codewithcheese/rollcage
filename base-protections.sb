@@ -1,0 +1,23 @@
+;; Final write protections — always appended after generated grants.
+;; These paths control future sandbox privileges or execute on Git operations.
+
+;; Sandbox rules must be changed outside the active sandbox.
+(deny file-write*
+  (literal (string-append (param "PROJECT_DIR") "/.rollcage")))
+
+;; User rules, packs, trust ledgers, and snapshots cannot be self-authorized.
+(deny file-write*
+  (subpath (string-append (param "HOME") "/.config/rollcage")))
+
+;; Keep the existing environment-file protections effective after later grants.
+(deny file-write*
+  (literal (string-append (param "PROJECT_DIR") "/.env"))
+  (literal (string-append (param "PROJECT_DIR") "/.env.local"))
+  (literal (string-append (param "PROJECT_DIR") "/.env.development"))
+  (literal (string-append (param "PROJECT_DIR") "/.env.staging"))
+  (literal (string-append (param "PROJECT_DIR") "/.env.test"))
+  (literal (string-append (param "PROJECT_DIR") "/.env.production")))
+
+;; Git hooks run during later Git commands and must not be injected by agents.
+(deny file-write*
+  (subpath (string-append (param "PROJECT_DIR") "/.git/hooks")))

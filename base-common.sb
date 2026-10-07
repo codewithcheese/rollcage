@@ -72,9 +72,10 @@
   (subpath (param "VOLATILE_DIR")))
 
 ;; Shared user rules — every agent can inspect the active sandbox config.
-;; Limit this grant to the config file; other launchers' trust stores stay private.
+;; Share config and packs; each adapter grants only its own trust-store reads.
 (allow file-read-data
-  (literal (string-append (param "HOME") "/.config/xclaude/config")))
+  (literal (string-append (param "HOME") "/.config/rollcage/config"))
+  (subpath (string-append (param "HOME") "/.config/rollcage/packs")))
 
 ;; Git config — needed for git commands inside sessions
 (allow file-read-data

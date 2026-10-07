@@ -1,5 +1,5 @@
 #!/bin/zsh
-# xclaude sandbox integration tests
+# rollcage sandbox integration tests
 # Runs on macOS only — tests that sandbox-exec with the assembled
 # profile actually blocks/allows the right filesystem operations.
 #
@@ -7,15 +7,16 @@
 #   zsh test_sandbox.zsh                          # base + all toolchains
 #   zsh test_sandbox.zsh --toolchain node         # base + one toolchain
 #   zsh test_sandbox.zsh --toolchain node,uv      # base + specific toolchains
-#   zsh test_sandbox.zsh --with-config path/.xclaude  # base + custom config
+#   zsh test_sandbox.zsh --with-config path/.rollcage  # base + custom config
 #
 # Requires: macOS with sandbox-exec, shasum
 
 set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
-__xclaude_dir="${SCRIPT_DIR}"
-source "${SCRIPT_DIR}/xclaude.lib.zsh"
+__rollcage_dir="${SCRIPT_DIR}"
+source "${SCRIPT_DIR}/rollcage.lib.zsh"
+__rollcage_init claude "$SCRIPT_DIR"
 
 # ── Pre-flight checks ────────────────────────────────────────
 if [[ "$(uname)" != "Darwin" ]]; then
@@ -38,7 +39,7 @@ t() { __test_name="$1"; }
 
 expect_success() {
   local desc="$1"; shift
-  local __stderr_file="${TMPDIR_RESOLVED}/xclaude-test-stderr-$$.txt"
+  local __stderr_file="${TMPDIR_RESOLVED}/rollcage-claude-test-stderr-$$.txt"
   if "$@" >/dev/null 2>"$__stderr_file"; then
     __test_pass=$((__test_pass + 1))
   else
@@ -84,13 +85,13 @@ PROJECT_DIR="$(readlink -f "$(mktemp -d)")"
 TMPDIR_RESOLVED="$(readlink -f "${TMPDIR:-/private/tmp}")"
 CACHE_DIR="${TMPDIR_RESOLVED%/T*}/C"
 VOLATILE_DIR="${TMPDIR_RESOLVED%/T*}/X"
-XCLAUDE_DIR="$(readlink -f "${SCRIPT_DIR}")"
+ROLLCAGE_DIR="$(readlink -f "${SCRIPT_DIR}")"
 HOME_DIR="${HOME}"
 
 # Bypass trust gate — tests manage their own configs
-__xclaude_trust_dir="$(mktemp -d)"
-__xclaude_trusted_file="${__xclaude_trust_dir}/trusted"
-__xclaude_trusted_copies="${__xclaude_trust_dir}/trusted.d"
+__rollcage_trust_dir="$(mktemp -d)"
+__rollcage_trusted_file="${__rollcage_trust_dir}/trusted"
+__rollcage_trusted_copies="${__rollcage_trust_dir}/trusted.d"
 
 # Create test fixtures in the project dir
 echo "hello" > "${PROJECT_DIR}/testfile.txt"
@@ -108,7 +109,7 @@ __ensure_fixture() {
     __fixtures_created+=("$dir")
   fi
   if [[ -n "$file" && ! -f "${dir}/${file}" ]]; then
-    echo "xclaude-test-fixture" > "${dir}/${file}"
+    echo "rollcage-claude-test-fixture" > "${dir}/${file}"
     __fixtures_created+=("${dir}/${file}")
   fi
 }
@@ -121,12 +122,12 @@ __ensure_fixture "${HOME}/.claude" ""
 # git excludesFile (granted) plus a sibling probe (must stay blocked — proves
 # the grant is literal, not a subpath over ~/.config/git).
 __ensure_fixture "${HOME}/.config/git" "ignore"
-__ensure_fixture "${HOME}/.config/git" "xclaude-blocked-probe"
+__ensure_fixture "${HOME}/.config/git" "rollcage-claude-blocked-probe"
 mkdir -p "${HOME}/Desktop" "${HOME}/Documents" "${HOME}/Downloads" 2>/dev/null || true
 [[ -f "${HOME}/.zsh_history" ]] || { echo "fixture" > "${HOME}/.zsh_history"; __fixtures_created+=("${HOME}/.zsh_history"); }
 
 cleanup() {
-  rm -rf "$PROJECT_DIR" "$__xclaude_trust_dir"
+  rm -rf "$PROJECT_DIR" "$__rollcage_trust_dir"
   rm -f "${PROFILE_PATH:-}"
   # Remove fixtures we created (reverse order to remove files before dirs)
   local f
@@ -144,8 +145,8 @@ trap cleanup EXIT
 __toolchain_filter=""
 __run_toolchains=true
 if [[ "${1:-}" = "--with-config" && -n "${2:-}" ]]; then
-  cp "$2" "${PROJECT_DIR}/.xclaude"
-  __xclaude_trust "${PROJECT_DIR}/.xclaude"
+  cp "$2" "${PROJECT_DIR}/.rollcage"
+  __rollcage_trust "${PROJECT_DIR}/.rollcage"
 elif [[ "${1:-}" = "--toolchain" ]]; then
   if [[ -n "${2:-}" ]]; then
     __toolchain_filter="${2}"
@@ -154,9 +155,9 @@ elif [[ "${1:-}" = "--toolchain" ]]; then
   fi
 fi
 
-PROFILE="$(__xclaude_assemble "$PROJECT_DIR")"
-PROFILE_PATH="${TMPDIR_RESOLVED}/xclaude-test-$$.sb"
-echo "$PROFILE" > "$PROFILE_PATH"
+PROFILE="$(__rollcage_assemble "$PROJECT_DIR")"
+PROFILE_PATH="${TMPDIR_RESOLVED}/rollcage-claude-test-$$.sb"
+printf '%s\n' "$PROFILE" > "$PROFILE_PATH"
 
 # Helper: run a command inside the sandbox
 sandboxed() {
@@ -168,13 +169,13 @@ sandboxed() {
     -D "CACHE_DIR=${CACHE_DIR}" \
     -D "VOLATILE_DIR=${VOLATILE_DIR}" \
     -D "HOME=${HOME_DIR}" \
-    -D "XCLAUDE_DIR=${XCLAUDE_DIR}" \
+    -D "ROLLCAGE_DIR=${ROLLCAGE_DIR}" \
     -f "$PROFILE_PATH" \
     -- "$@"
 }
 
 echo "=== Profile ==="
-echo "  base.sb + project config assembled to: ${PROFILE_PATH}"
+echo "  base-claude.sb + project config assembled to: ${PROFILE_PATH}"
 echo "  project dir: ${PROJECT_DIR}"
 echo ""
 
@@ -227,7 +228,7 @@ t "read ~/.zsh_history"
 expect_fail "blocked" sandboxed cat "${HOME}/.zsh_history"
 
 t "read ~/.config/git sibling (literal grant, not subpath)"
-expect_fail "blocked" sandboxed cat "${HOME}/.config/git/xclaude-blocked-probe"
+expect_fail "blocked" sandboxed cat "${HOME}/.config/git/rollcage-claude-blocked-probe"
 
 # ── Tests: base profile (writes) ─────────────────────────────
 echo "=== Write access ==="
@@ -239,29 +240,29 @@ t "write to project subdir"
 expect_success "allowed" sandboxed touch "${PROJECT_DIR}/subdir/newfile.txt"
 
 t "write to tmp"
-expect_success "allowed" sandboxed touch "/private/tmp/xclaude-test-$$"
-rm -f "/private/tmp/xclaude-test-$$"
+expect_success "allowed" sandboxed touch "/private/tmp/rollcage-claude-test-$$"
+rm -f "/private/tmp/rollcage-claude-test-$$"
 
 # ── Tests: base profile (blocked writes) ─────────────────────
 echo "=== Blocked writes ==="
 
 t "write to home root"
-expect_fail "blocked" sandboxed touch "${HOME}/xclaude-test-should-not-exist"
+expect_fail "blocked" sandboxed touch "${HOME}/rollcage-claude-test-should-not-exist"
 
 t "write to ~/Desktop"
-expect_fail "blocked" sandboxed touch "${HOME}/Desktop/xclaude-test"
+expect_fail "blocked" sandboxed touch "${HOME}/Desktop/rollcage-claude-test"
 
 t "write to ~/.ssh"
-expect_fail "blocked" sandboxed touch "${HOME}/.ssh/xclaude-test"
+expect_fail "blocked" sandboxed touch "${HOME}/.ssh/rollcage-claude-test"
 
-t "write to .xclaude config"
-# .xclaude must exist first — deny applies to the literal path
-echo "tool node" > "${PROJECT_DIR}/.xclaude"
-expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' >> '${PROJECT_DIR}/.xclaude'"
+t "write to .rollcage config"
+# .rollcage must exist first — deny applies to the literal path
+echo "tool node" > "${PROJECT_DIR}/.rollcage"
+expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' >> '${PROJECT_DIR}/.rollcage'"
 
-t "create .xclaude where none exists"
-rm -f "${PROJECT_DIR}/.xclaude"
-expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' > '${PROJECT_DIR}/.xclaude'"
+t "create .rollcage where none exists"
+rm -f "${PROJECT_DIR}/.rollcage"
+expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' > '${PROJECT_DIR}/.rollcage'"
 
 t "write to .env"
 echo "OLD_SECRET=xxx" > "${PROJECT_DIR}/.env"
@@ -309,10 +310,10 @@ expect_fail "blocked" sandboxed cat "${PROJECT_DIR}/../../.ssh/known_hosts"
 t "/tmp script writing then executing"
 # Write a script to /tmp, then try to exec it — should fail
 # because /tmp is not in the exec allowlist
-sandboxed /bin/sh -c "echo '#!/bin/sh\ncat ~/.ssh/id_rsa' > /private/tmp/xclaude-escape-$$.sh && chmod +x /private/tmp/xclaude-escape-$$.sh" 2>/dev/null || true
-if [[ -f "/private/tmp/xclaude-escape-$$.sh" ]]; then
-  expect_fail "blocked" sandboxed /private/tmp/xclaude-escape-$$.sh
-  rm -f "/private/tmp/xclaude-escape-$$.sh"
+sandboxed /bin/sh -c "echo '#!/bin/sh\ncat ~/.ssh/id_rsa' > /private/tmp/rollcage-claude-escape-$$.sh && chmod +x /private/tmp/rollcage-claude-escape-$$.sh" 2>/dev/null || true
+if [[ -f "/private/tmp/rollcage-claude-escape-$$.sh" ]]; then
+  expect_fail "blocked" sandboxed /private/tmp/rollcage-claude-escape-$$.sh
+  rm -f "/private/tmp/rollcage-claude-escape-$$.sh"
 else
   # The write itself might have succeeded but the inner cat would fail
   # Either way, the escape vector is blocked
@@ -326,7 +327,7 @@ expect_fail "blocked" sandboxed /bin/sh -c "cat ${HOME}/.ssh/known_hosts"
 rm -f "${PROJECT_DIR}/ssh-link" "${PROJECT_DIR}/newfile.txt" "${PROJECT_DIR}/subdir/newfile.txt" "${PROJECT_DIR}/test.sh" "${PROJECT_DIR}/normal-file.txt"
 rm -f "${PROJECT_DIR}/.env" "${PROJECT_DIR}/.env.local" "${PROJECT_DIR}/.env.production"
 rm -rf "${PROJECT_DIR}/.git"
-rm -f "${PROJECT_DIR}/.xclaude"
+rm -f "${PROJECT_DIR}/.rollcage"
 
 # ── Toolchain tests ──────────────────────────────────────────
 # Each toolchain has a .test.zsh file alongside its .sb fragment.

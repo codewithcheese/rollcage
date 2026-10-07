@@ -29,7 +29,7 @@ t "gh: gh api (authenticated)"
 expect_success "api" tc_sandboxed "$__gh_bin" api repos/cli/cli --jq '.name'
 
 t "gh: gh search repos"
-expect_success "search" tc_sandboxed "$__gh_bin" search repos xclaude --limit 1
+expect_success "search" tc_sandboxed "$__gh_bin" search repos rollcage --limit 1
 
 # ── Isolation ──
 t "gh: ~/.ssh blocked"

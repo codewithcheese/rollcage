@@ -3,16 +3,16 @@
 Status: design notes only; this variant is not implemented. The historical
 experiments and usage counts below were recorded during earlier investigation;
 their scripts and raw results are not included here and must be reproduced before
-they are relied on for implementation. The proposed interface also needs updating
-when the Rollcage rename lands.
+they are relied on for implementation. The proposed profile selector must be added to the dispatcher; it is not an
+existing Rollcage option.
 
 ## Context
 
-`xclaude` today runs `claude --dangerously-skip-permissions` (`xclaude:79`) under a
+`rollcage claude` today runs `claude --dangerously-skip-permissions` in `__rollcage_launch_claude` under a
 **deny-default allowlist** sandbox (`base-common.sb:2` is `(deny default)`): access is limited
 to the project, temporary directories, explicit base grants, and configured rules.
 That is the right posture for untrusted work, but it is too restrictive for everyday tasks — the user reports avoiding
-`xclaude` for that reason and running `claude` bare instead, i.e. with **no** sandbox at all.
+`rollcage` for that reason and running `claude` bare instead, i.e. with **no** sandbox at all.
 
 The goal of this variant is a **low-friction profile usable in the majority of cases**, opt-in,
 that gives *some* protection against common attack vectors — especially the developer
@@ -23,12 +23,12 @@ that *a sandbox the user actually runs beats a strict one they bypass.*
 
 ### Previously recorded interface decisions
 
-- **Selection:** `XCLAUDE_PROFILE=relaxed` env var, plus an `xclaude --relaxed` flag as sugar
+- **Selection:** `ROLLCAGE_PROFILE=relaxed` env var, plus an `rollcage --relaxed claude` flag as sugar
   for it. Unset/`default` → today's behavior. Unknown value → hard error (no silent misconfig).
 - **Permission mode:** run Claude in **`--permission-mode auto`**, not bypass. The sandbox is a
   weaker boundary here, so Claude's own classifier stays on as a second layer.
 - **Rollout:** opt-in only. Do **not** make `relaxed` the default yet. Revisit flipping the
-  default (with `XCLAUDE_PROFILE=strict` to opt back) only after it is battle-tested, as a
+  default (with `ROLLCAGE_PROFILE=strict` to opt back) only after it is battle-tested, as a
   deliberate, announced change.
 
 ## Threat model
@@ -183,8 +183,8 @@ counts suggest low friction in that corpus, but do not establish future compatib
 | `~/.local/bin` | PATH hijack + protects the `claude` binary symlink | 0 |
 | `~/.gitconfig`, `~/.config/git` | `core.hooksPath`/aliases/filters/`credential.helper` → exec on git ops | 0 |
 | `~/.claude/{settings.json,settings.local.json,hooks,plugins,commands,CLAUDE.md}` | tamper with own guardrails / prompt-inject future sessions | 4 / 5 (rest 0) |
-| `~/.config/{xclaude,xcodex,xpi}`, `(param XCLAUDE_DIR)` | rewrite trust ledger / `base.sb` → disable sandbox next launch | 6 (dev-on-xclaude only) |
-| `<project>/.git/hooks`, `<project>/.xclaude` | code-on-git-action / sandbox config escalation | (already in strict base) |
+| `~/.config/rollcage`, `(param ROLLCAGE_DIR)` | rewrite trust ledger / `base-claude.sb` → disable sandbox next launch | 6 (dev-on-rollcage only) |
+| `<project>/.git/hooks`, `<project>/.rollcage` | code-on-git-action / sandbox config escalation | (already in strict base) |
 
 Notes:
 - `~/.cargo/config.toml`, `~/.npmrc`, and similar tool-config exec hooks are **0 writes** too, but
@@ -284,41 +284,43 @@ the strict base — the file allowlists differ — but it is a small, reviewable
   user/project rules and toolchains; covers agent settings/hooks, sandbox control
   state, the installation directory, and project sandbox config.
 
-### Selection (`xclaude.lib.zsh:14`, `__xclaude_sync`)
+### Selection (`rollcage.lib.zsh`, `__rollcage_init`)
 
 ```zsh
-case "${XCLAUDE_PROFILE:-default}" in
-  default) __xsandbox_base_profiles=("${__xclaude_dir}/base-common.sb" "${__xclaude_dir}/base.sb") ;;
-  relaxed) __xsandbox_base_profiles=("${__xclaude_dir}/base-relaxed-common.sb" "${__xclaude_dir}/base-relaxed.sb") ;;
-  *) __xsandbox_log "unknown XCLAUDE_PROFILE: ${XCLAUDE_PROFILE}"; return 1 ;;
+# Only the Claude selection would accept this draft variant.
+case "${ROLLCAGE_PROFILE:-default}" in
+  default) __rollcage_base_profiles=("${__rollcage_dir}/base-common.sb" "${__rollcage_dir}/base-${cli}.sb") ;;
+  relaxed) __rollcage_base_profiles=("${__rollcage_dir}/base-relaxed-common.sb" "${__rollcage_dir}/base-relaxed.sb") ;;
+  *) __rollcage_log "unknown ROLLCAGE_PROFILE: ${ROLLCAGE_PROFILE}"; return 1 ;;
 esac
 ```
 
-### Launcher (`xclaude`)
+### Launcher (`rollcage` dispatcher and `adapters/claude.zsh`)
 
-- Parse `--relaxed` in `main()` → set `XCLAUDE_PROFILE=relaxed` (flag is sugar for the env var);
-  validate `XCLAUDE_PROFILE` near the top and error on unknown values.
-- Replace the hardcoded permission flag (`xclaude:79`) with an array, mirroring the gui plan:
+- Parse `--relaxed` in the dispatcher before the CLI selector → set `ROLLCAGE_PROFILE=relaxed` (flag is sugar for the env var);
+  validate `ROLLCAGE_PROFILE` near the top and error on unknown values.
+- Replace the hardcoded permission flag in `__rollcage_launch_claude` with an array, mirroring the gui plan:
 
 ```zsh
 local -a perm_args=(--dangerously-skip-permissions)
-[[ "${XCLAUDE_PROFILE:-default}" == "relaxed" ]] && perm_args=(--permission-mode auto)
-# … -- claude "${perm_args[@]}" --plugin-dir "${__xclaude_dir}" "${claude_args[@]}"
+[[ "${ROLLCAGE_PROFILE:-default}" == "relaxed" ]] && perm_args=(--permission-mode auto)
+# … -- claude "${perm_args[@]}" --plugin-dir "${__rollcage_dir}" "${claude_args[@]}"
 ```
 
 The reload-on-denial loop, plugin dir, denial-log hook, packs, DSL, and trust gate are unchanged.
 
 ### Re-grant ordering (required protection)
 
-The assembler (`__xsandbox_assemble`) concatenates base → user rules → project
+The assembler (`__rollcage_assemble`) concatenates base → user rules → project
 rules, with toolchains and packs expanded in place. A later allow can override an
-earlier deny. Current verification confirms that a parent-directory write grant
-overrides the strict base's literal `.xclaude` write deny; rejecting the config
-basename in the validator does not prevent that parent grant.
+earlier deny. The base-only policy permitted a later parent-directory write grant to override
+the literal `.rollcage` deny. Rollcage now appends `base-protections.sb` and
+resolved control-file denies after all grants; retain that ordering in variants.
 
-For the **non-negotiable guardrail set** (`~/.claude` settings/hooks, `~/.config/xclaude`,
-the other launchers' trust stores, `XCLAUDE_DIR`, project `.xclaude`), append
-`base-relaxed-tail.sb` **last** so generated rules cannot override it. This is a
+For the **non-negotiable guardrail set** (`~/.claude` settings/hooks, `~/.config/rollcage`,
+the other launchers' trust stores, `ROLLCAGE_DIR`, project `.rollcage`), append
+the existing `base-protections.sb` and additional relaxed guardrails in
+`base-relaxed-tail.sb` **last** so generated rules cannot override them. This is a
 required boundary, not optional hardening. Test parent grants, creation, replacement,
 deletion, and resolved symlink paths. Whether other secret/persistence denies may
 be deliberately re-granted remains a separate design decision.
@@ -343,14 +345,14 @@ be deliberately re-granted remains a separate design decision.
 
 ## Tests
 
-New `test_xclaude_relaxed_sandbox.zsh` (mirrors `test_xcodex_sandbox.zsh` / `test_xpi_sandbox.zsh`),
-assembled with `XCLAUDE_PROFILE=relaxed`:
+New `test_rollcage_relaxed_sandbox.zsh` (mirrors `test_codex_sandbox.zsh` / `test_pi_sandbox.zsh`),
+assembled with `ROLLCAGE_PROFILE=relaxed`:
 
 - **Allow-list works:** write to `~/<random>` and read an arbitrary home file → allowed.
 - **Write fails closed by absence:** write to a path *outside* `$HOME`/tmp/project (e.g.
   `/opt/relaxed-test`, `/usr/local/relaxed-test`) → denied with no deny rule present.
 - **Write carve-outs hold:** `~/Library/LaunchAgents`, `~/.zshrc`, `~/.local/bin`, `~/.gitconfig`,
-  `~/.claude/settings.json`, `~/.config/xclaude`, `~/.ssh`, project `.xclaude` → denied.
+  `~/.claude/settings.json`, `~/.config/rollcage`, `~/.ssh`, project `.rollcage` → denied.
 - **Final protections hold:** later parent-directory grants cannot permit writing,
   replacing, creating, or deleting protected config and trust state.
 - **Read-denies hold:** `~/.ssh`, `~/.aws`, `~/.gemini` → denied; `~/.claude` → **allowed** (agent creds).
@@ -359,27 +361,27 @@ assembled with `XCLAUDE_PROFILE=relaxed`:
   domain → still writes (selectivity). Assert the file-deny-only case is *not* relied upon.
 - **Exec allow-list:** a binary under `~` runs; a binary in `$TMPDIR`/`/private/tmp` does **not**
   (blocked by absence). Separately document that allowed interpreters can run scripts there.
-- **Agent starts:** Claude launches under the profile (as the xcodex/xpi tests verify their agents).
+- **Agent starts:** Claude launches under the profile (as the rollcage codex/rollcage pi tests verify their agents).
 
-DSL pipeline is unchanged → `test_xclaude.bash` and `toolchains/*` untouched.
+DSL pipeline is unchanged → `test_rollcage.bash` and `toolchains/*` untouched.
 
 ## Docs to update
 
-- `README.md` — document `XCLAUDE_PROFILE=relaxed` / `xclaude --relaxed`: what it adds, that it
+- `README.md` — document `ROLLCAGE_PROFILE=relaxed` / `rollcage --relaxed claude`: what it adds, that it
   runs Claude in `auto` mode, and the explicit residuals (network not contained).
 - `CLAUDE.md` (repo) — add the `base-relaxed*.sb` files to the architecture list and a "Profile
   variants" note under the SBPL section; record the deny-default model, final protections,
   and the dual-deny finding once reproduced.
 - `plugin/skills/debug-sandbox/SKILL.md` — note the relaxed variant so denial diagnosis accounts
   for it (and that under it most denials mean a guardrail/secret deny fired, not a missing allow).
-- `.github/workflows/test.yml` — add a CI job running `zsh test_xclaude_relaxed_sandbox.zsh`.
+- `.github/workflows/test.yml` — add a CI job running `zsh test_rollcage_relaxed_sandbox.zsh`.
 
 ## Verification
 
-1. `bash test_xclaude.bash` — DSL pipeline unaffected (sanity).
-2. `zsh test_xclaude_relaxed_sandbox.zsh` — new relaxed assertions pass.
+1. `bash test_rollcage.bash` — DSL pipeline unaffected (sanity).
+2. `zsh test_rollcage_relaxed_sandbox.zsh` — new relaxed assertions pass.
 3. `zsh test_sandbox.zsh --toolchain none` — strict base profile unchanged/green.
-4. Manual smoke: `xclaude --relaxed` in a normal project; confirm Claude starts in `auto` mode,
+4. Manual smoke: `rollcage --relaxed claude` in a normal project; confirm Claude starts in `auto` mode,
    ordinary home-dir reads/writes work, and `npm install` of a known package succeeds while a
    write to `~/Library/LaunchAgents` is refused.
 
@@ -388,7 +390,7 @@ DSL pipeline is unchanged → `test_xclaude.bash` and `toolchains/*` untouched.
 - **Credential-CLI reads** (`~/.aws`, `~/.config/gcloud`, `~/.config/gh`, `~/.npmrc`): denied here
   because real malware targets exactly these paths, but that breaks `aws`/`gh`/`npm publish`
   *inside* agent sessions. The DSL is the re-grant path — a project that needs one adds
-  `allow-read ~/.config/gh` to its `.xclaude` (trust-gated). If the user routinely uses these CLIs
+  `allow-read ~/.config/gh` to its `.rollcage` (trust-gated). If the user routinely uses these CLIs
   in sessions, reconsider leaving them readable.
 - **`~/.claude/settings.json` write-deny** may interfere with in-session settings changes
   (`/config`). Claude Code's native sandbox denies it and CC still works (settings edits are rare /

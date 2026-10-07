@@ -7,7 +7,7 @@
 ;;
 ;; CAVEAT: macOS forbids nested sandbox-exec, so SwiftPM's inner
 ;; manifest sandbox can't initialize. Pass --disable-sandbox to swift
-;; build/run/test/package. The outer xclaude sandbox still applies.
+;; build/run/test/package. The outer rollcage sandbox still applies.
 
 ;; Exec — Xcode and CLT. Whole Xcode.app because lldb's debugserver
 ;; lives in Contents/SharedFrameworks, not Contents/Developer.

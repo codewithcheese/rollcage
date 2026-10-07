@@ -83,10 +83,10 @@
   (subpath (param "OMP_XDG_STATE_ROOT"))
   (subpath (param "OMP_XDG_CACHE_ROOT")))
 
-;; xomp trust ledger and snapshots are readable for sandbox debugging,
+;; rollcage omp trust ledger and snapshots are readable for sandbox debugging,
 ;; but writable only by the outer launcher.
 (allow file-read-data
-  (subpath (string-append (param "HOME") "/.config/xomp")))
+  (subpath (string-append (param "HOME") "/.config/rollcage/trust/omp")))
 
 ;; Xcode lives outside the system paths read by base-common.sb; LLDB and its
 ;; adjacent shared frameworks need data reads when OMP starts a DAP session.
@@ -116,4 +116,4 @@
 
 ;; Shared project sandbox config is executable authority for the next launch.
 (deny file-write*
-  (literal (string-append (param "PROJECT_DIR") "/.xclaude")))
+  (literal (string-append (param "PROJECT_DIR") "/.rollcage")))

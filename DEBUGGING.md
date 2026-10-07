@@ -6,18 +6,18 @@
 # Does the base profile load without crashing?
 sandbox-exec -D PROJECT_DIR=$(readlink -f $PWD) -D TMPDIR=$(readlink -f $TMPDIR) \
   -D CACHE_DIR=$(readlink -f $TMPDIR | sed 's|/T.*|/C|') -D HOME=$HOME \
-  -f base.sb -- /bin/echo "profile ok"
+  -f base-claude.sb -- /bin/echo "profile ok"
 
 # Does Claude run in print mode?
 sandbox-exec -D PROJECT_DIR=$(readlink -f $PWD) -D TMPDIR=$(readlink -f $TMPDIR) \
   -D CACHE_DIR=$(readlink -f $TMPDIR | sed 's|/T.*|/C|') -D HOME=$HOME \
-  -f base.sb -- claude --print "Say: hello" < /dev/null
+  -f base-claude.sb -- claude --print "Say: hello" < /dev/null
 
 # Does the TUI render? (uses `script` to allocate a real TTY)
 timeout 5 script -q /dev/null sandbox-exec -D PROJECT_DIR=$(readlink -f $PWD) \
   -D TMPDIR=$(readlink -f $TMPDIR) \
   -D CACHE_DIR=$(readlink -f $TMPDIR | sed 's|/T.*|/C|') -D HOME=$HOME \
-  -f base.sb -- claude < /dev/null 2>&1 | cat -v | head -10
+  -f base-claude.sb -- claude < /dev/null 2>&1 | cat -v | head -10
 # Look for ANSI escape codes like "Claude Code" — that means the TUI rendered.
 ```
 
@@ -82,7 +82,7 @@ Individual file allows (`path`/`literal`) cannot punch a hole in a parent `subpa
 
 ```scheme
 (allow file-write* (subpath "/Users/tom/project"))
-(deny file-write* (literal "/Users/tom/project/.xclaude"))  ;; WORKS — deny after allow
+(deny file-write* (literal "/Users/tom/project/.rollcage"))  ;; WORKS — deny after allow
 ```
 
 When a deny comes **after** a matching allow, the deny wins. This is how you protect specific files inside an otherwise writable directory. Use `(literal)` for exact path matching.

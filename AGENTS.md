@@ -1,6 +1,6 @@
-# xclaude
+# rollcage
 
-## Sandbox profile (base.sb)
+## Sandbox profile (base-claude.sb)
 
 - Every SBPL statement must have a comment explaining why it exists.
 
@@ -10,8 +10,8 @@
 - **Test inside the sandbox.** Don't assume rules work — write explicit test commands using `sandbox-exec` with the assembled profile.
 - **Security implications first.** Think through what a permission change exposes before suggesting it. Scope as narrowly as possible.
 - **Prefer alternatives to widening permissions.** Local installs over global, project-local paths over home paths. Only widen if no alternative exists.
-- **Keep xclaude generic.** No tool-specific code in xclaude itself. Tool-specific paths belong in toolchains or project `.xclaude` files.
-- **Infrastructure vs project config.** System-level paths (TMPDIR, CACHE_DIR, VOLATILE_DIR) and always-on tools (cmux) belong in base.sb or `~/.config/xclaude/config`, not project `.xclaude`.
+- **Keep rollcage generic.** No tool-specific code in rollcage itself. Tool-specific paths belong in toolchains or project `.rollcage` files.
+- **Infrastructure vs project config.** System-level paths (TMPDIR, CACHE_DIR, VOLATILE_DIR) and always-on tools (cmux) belong in base-common.sb or `~/.config/rollcage/config`, not project `.rollcage`.
 - **Separate toolchains for separate trade-offs.** e.g. `playwright` (shared cache) vs `playwright-chromium` (macOS integration paths). Don't bundle unrelated concerns.
 
 ## Plugin
@@ -27,44 +27,39 @@ plugin/
 ```
 
 - The **hook** provides enough context for the model to decide whether to invoke the skill. Detailed instructions belong in the skill, not the hook.
-- The **skill** must check `~/.config/xclaude/config` (user-level) before suggesting project rules. Don't duplicate what's already active.
-- Update the skill's toolchain table and "base profile already covers" section when adding toolchains or base.sb parameters.
+- The **skill** must check `~/.config/rollcage/config` (user-level) before suggesting project rules. Don't duplicate what's already active.
+- Update the skill's toolchain table and "base profile already covers" section when adding toolchains or base-claude.sb parameters.
 
 # Development Guide
 
 ## Architecture
 
 ```
-xclaude                  # Claude executable entry point
-xcodex                   # Codex executable entry point
-xpi                      # Pi coding agent executable entry point
-xsandbox.lib.zsh         # Shared library: DSL parser, validator, generator, assembler, trust gate
-xclaude.lib.zsh          # Claude-specific wrapper over shared library
-xcodex.lib.zsh           # Codex-specific wrapper over shared library
-xpi.lib.zsh              # Pi-specific wrapper over shared library
-base-common.sb           # Shared SBPL base fragment (deny default + common rules)
-base.sb                  # Claude-specific SBPL fragment
-base-codex.sb            # Codex-specific SBPL fragment
-base-pi.sb               # Pi-specific SBPL fragment
+rollcage                  # Unified CLI dispatcher
+rollcage.lib.zsh          # Shared initialization, DSL, assembler, trust gate
+adapters/<cli>.zsh       # Claude, Codex, Pi, OMP, and OpenCode launch behavior
+base-common.sb           # Shared deny-default policy
+base-<cli>.sb            # CLI-specific runtime policy
+base-protections.sb      # Final write denies after generated grants
 toolchains/
-  <name>.sb              # SBPL fragment for a toolchain
-  <name>.test.zsh        # Sandbox tests for that toolchain
-  test_helpers.zsh       # Shared test helpers (tc_setup, tc_sandboxed, etc.)
-.claude-plugin/
-  plugin.json            # Plugin manifest (loaded via --plugin-dir)
-plugin/
-  hooks/hooks.json       # PostToolUseFailure hook config
-  hooks/sandbox-denial-hook.sh
-  skills/debug-sandbox/  # /debug-sandbox skill
-test_xclaude.bash        # DSL pipeline unit tests (bash, any platform)
-test_sandbox.zsh         # Sandbox integration tests (zsh, macOS only)
+  <name>.sb              # Vetted toolchain fragment
+  <name>.test.zsh        # Toolchain sandbox tests
+  test_helpers.zsh       # Shared test helpers
+.claude-plugin/plugin.json # Claude plugin manifest
+plugin/                  # Claude hooks and skills
+test_rollcage.bash       # Portable DSL tests
+test_trust_gate.zsh      # Portable trust tests
+test_dispatch.zsh        # Portable dispatcher tests
+test_sandbox.zsh         # Claude base and toolchain integration
+test_<cli>_sandbox.zsh   # Other CLI base integration
+test_protections_sandbox.zsh # Final write denies and read isolation
 ```
 
-The DSL (`.xclaude` files) is the safety boundary between user/project config and the kernel sandbox. Raw SBPL is only in `base.sb` and `toolchains/*.sb` — both are bundled and vetted.
+The DSL (`.rollcage` files) is the safety boundary between user/project config and the kernel sandbox. Bundled SBPL is in `base-*.sb` and `toolchains/*.sb` — both are bundled and vetted.
 
 ## SBPL parameters
 
-All parameters are passed to `sandbox-exec` via `-D KEY=value` flags in `xclaude`.
+All parameters are passed to `sandbox-exec` via `-D KEY=value` flags in `rollcage`.
 
 | Parameter | Resolves to |
 |---|---|
@@ -73,39 +68,36 @@ All parameters are passed to `sandbox-exec` via `-D KEY=value` flags in `xclaude
 | `TMPDIR` | `/private/var/folders/.../T/` |
 | `CACHE_DIR` | `/private/var/folders/.../C/` (sibling of TMPDIR) |
 | `VOLATILE_DIR` | `/private/var/folders/.../X/` (sibling of TMPDIR, code-signing clones) |
-| `XCLAUDE_DIR` | Absolute path of the xclaude installation (where `xclaude` lives) |
-| `XCODEX_DIR` | Absolute path of the xclaude installation when launched via `xcodex` |
-| `XPI_DIR` | Absolute path of the xclaude installation when launched via `xpi` |
+| `ROLLCAGE_DIR` | Resolved Rollcage installation directory |
 
 Use `(param "NAME")` in SBPL — never hardcode paths.
 
 ## Environment variables
 
-xclaude sets these env vars for processes inside the sandbox:
+rollcage sets these env vars for processes inside the sandbox:
 
 | Variable | Value | Stability |
 |---|---|---|
-| `XCLAUDE_ACTIVE` | `1` | **Stable** — recommended way for tools to detect either launcher sandbox |
-| `XCLAUDE_DENIAL_LOG` | Path to denial log file | Internal — do not rely on |
-| `XCLAUDE_RELOAD_SENTINEL` | Path to reload sentinel file | Internal — do not rely on |
-| `XCODEX_ACTIVE` | `1` | **Stable** — recommended way for tools to detect the Codex sandbox |
-| `XPI_ACTIVE` | `1` | **Stable** — recommended way for tools to detect the Pi sandbox |
+| `ROLLCAGE_ACTIVE` | `1` | **Stable** — shared sandbox detection marker |
+| `ROLLCAGE_CLI` | Selected CLI name | **Stable** — `claude`, `codex`, `pi`, `omp`, or `opencode` |
+| `ROLLCAGE_COLOR` | `auto`, `always`, or `never` | Optional trust-prompt color preference |
+| `ROLLCAGE_DENIAL_LOG` | Path to denial log file | Internal; Claude only |
+| `ROLLCAGE_RELOAD_SENTINEL` | Path to reload sentinel | Internal; Claude only |
 
-To check if running inside any launcher's sandbox: `[[ "${XCLAUDE_ACTIVE:-}" == "1" ]]`.
-To check specifically for xcodex: `[[ "${XCODEX_ACTIVE:-}" == "1" ]]`.
-To check specifically for xpi: `[[ "${XPI_ACTIVE:-}" == "1" ]]`.
+Check any Rollcage sandbox: `[[ "${ROLLCAGE_ACTIVE:-}" == "1" ]]`.
+Check the selected CLI: `[[ "${ROLLCAGE_CLI:-}" == "codex" ]]`.
 
 ## Codex support
 
-`xcodex` uses the same shared DSL, trust gate, packs, and assembler as `xclaude`, with shared user-level config and a Codex-specific base profile:
+`rollcage codex` uses the same shared DSL, trust gate, packs, and assembler as `rollcage`, with shared user-level config and a Codex-specific base profile:
 
-- Project config: `.xclaude` (shared with `xclaude`; name may become generic later)
-- User config: `~/.config/xclaude/config`
-- Packs referenced by `.xclaude`: `~/.config/xclaude/packs/<name>`
-- Trust ledger: `~/.config/xcodex/trusted`
+- Project config: `.rollcage` (shared by all CLI selections)
+- User config: `~/.config/rollcage/config`
+- Packs referenced by `.rollcage`: `~/.config/rollcage/packs/<name>`
+- Trust ledger: `~/.config/rollcage/trust/codex/trusted`
 - Base fragments: `base-common.sb` + `base-codex.sb`
 
-`xcodex` resolves the `codex` executable before entering Seatbelt and launches it with `--dangerously-bypass-approvals-and-sandbox`; the outer `sandbox-exec` profile is the sandbox boundary. Keep Codex plugin/hook behavior out of scope until there is a deliberate design for it.
+`rollcage codex` resolves the `codex` executable before entering Seatbelt and launches it with `--dangerously-bypass-approvals-and-sandbox`; the outer `sandbox-exec` profile is the sandbox boundary. Keep Codex plugin/hook behavior out of scope until there is a deliberate design for it.
 
 Current Codex install layouts covered by `base-codex.sb`:
 
@@ -116,15 +108,15 @@ Current Codex install layouts covered by `base-codex.sb`:
 
 ## Pi support
 
-`xpi` uses the same shared DSL, trust gate, packs, and assembler as `xclaude`, with shared user-level config and a Pi-specific base profile:
+`rollcage pi` uses the same shared DSL, trust gate, packs, and assembler as `rollcage`, with shared user-level config and a Pi-specific base profile:
 
-- Project config: `.xclaude` (shared with `xclaude` and `xcodex`; name may become generic later)
-- User config: `~/.config/xclaude/config`
-- Packs referenced by `.xclaude`: `~/.config/xclaude/packs/<name>`
-- Trust ledger: `~/.config/xpi/trusted`
+- Project config: `.rollcage` (shared by all CLI selections)
+- User config: `~/.config/rollcage/config`
+- Packs referenced by `.rollcage`: `~/.config/rollcage/packs/<name>`
+- Trust ledger: `~/.config/rollcage/trust/pi/trusted`
 - Base fragments: `base-common.sb` + `base-pi.sb`
 
-`xpi` resolves the `pi` executable before entering Seatbelt and launches it directly — Pi has no built-in approval/sandbox layer to disable, so the binary just runs under the outer `sandbox-exec` profile. Keep Pi plugin/hook behavior out of scope until there is a deliberate design for it.
+`rollcage pi` resolves the `pi` executable before entering Seatbelt and launches it directly — Pi has no built-in approval/sandbox layer to disable, so the binary just runs under the outer `sandbox-exec` profile. Keep Pi plugin/hook behavior out of scope until there is a deliberate design for it.
 
 Current Pi install layouts covered by `base-pi.sb` (only the methods documented at pi.dev/docs):
 
@@ -138,7 +130,7 @@ Pi installs runtime packages and TypeScript extensions under `~/.pi/agent/{npm,g
 
 ## SBPL rules to know
 
-- `(deny default)` is in base.sb. Everything else is `(allow ...)`.
+- `(deny default)` is in `base-common.sb`. Final write denies are appended after all generated grants in `base-protections.sb`; the assembler also protects resolved control-file targets and freezes their ancestor directory entries against replacement.
 - **Last-match-wins**: a `(deny)` placed AFTER an `(allow)` overrides it. This is how we protect files inside writable directories.
 - Use `(literal)` for exact file paths, `(subpath)` for directories.
 - `(path)` allows CANNOT override `(subpath)` denies. But `(literal)` denies CAN override `(subpath)` allows (when the deny comes after).
@@ -243,16 +235,16 @@ Each toolchain gets its own parallel CI job in `.github/workflows/test.yml`. The
 
 ## Adding a pack
 
-Packs are **user data**, not repo assets. They live at `~/.config/<name>/packs/<pack-name>` and are written in the same DSL as `.xclaude` (minus `pack` itself — no nesting). There is no template to check in, no test harness to wire up: a pack is just a file the user drops in their own config directory.
+Packs are **user data**, not repo assets. They live at `~/.config/rollcage/packs/<pack-name>` and are written in the same DSL as `.rollcage` (minus `pack` itself — no nesting). There is no template to check in, no test harness to wire up: a pack is just a file the user drops in their own config directory.
 
 When working on pack-related code:
 
-- Parser, validator, and generator all go through `xsandbox.lib.zsh`. The validator takes a source argument (`user`, `project`, `pack`) — `pack` is only legal with `source=project`, and `pack` with `source=pack` is an error.
-- Generator expansion is recursive: a `pack` directive re-runs `__xsandbox_parse | __xsandbox_validate pack | __xsandbox_generate` on the pack file. Keep pipefail enabled in any new pipeline so inner failures abort assembly.
-- Trust is per-(project, pack name, pack hash). Ledger entries for packs use the compound form `<hash> # <project_path> pack <pack_name>`; snapshots under `trusted.d/` are keyed by a sha256 of `<project_path>|pack|<pack_name>`.
-- `__xsandbox_check_pack_trusts` uses fd 3 for its parse feed so the interactive `read` inside `__xsandbox_check_pack_trust` still sees user stdin. Don't "simplify" that to a normal while-loop redirect.
+- Parser, validator, and generator all go through `rollcage.lib.zsh`. The validator takes a source argument (`user`, `project`, `pack`) — `pack` is only legal with `source=project`, and `pack` with `source=pack` is an error.
+- Generator expansion is recursive: a `pack` directive re-runs `__rollcage_parse | __rollcage_validate pack | __rollcage_generate` on the pack file. Keep pipefail enabled in any new pipeline so inner failures abort assembly.
+- Trust is per-(project, pack name, pack hash). Ledger entries use `<hash> # <scope> pack <pack_name>` (plus a diagnostic path for repo scope); snapshots are keyed by sha256 of `<scope>|pack|<pack_name>`. Stores are separate under `~/.config/rollcage/trust/<cli>/`.
+- `__rollcage_check_pack_trusts` uses fd 3 for its parse feed so the interactive `read` inside `__rollcage_check_pack_trust` still sees user stdin. Don't "simplify" that to a normal while-loop redirect.
 
-## Modifying the base policy (base.sb)
+## Modifying the base policy (base-claude.sb)
 
 ### Adding read access
 
@@ -270,20 +262,20 @@ When working on pack-related code:
 
 ### Protecting a file inside a writable directory
 
-Use deny-after-allow (last-match-wins). The deny MUST appear after the `(allow file-write* (subpath (param "PROJECT_DIR")))` block:
+Use deny-after-allow (last-match-wins). Put the deny in `base-protections.sb`, which is appended after all base, user, toolchain, pack, and project grants:
 
 ```scheme
 (deny file-write*
   (literal (string-append (param "PROJECT_DIR") "/.secret-file")))
 ```
 
-Use `(literal)` for files, `(subpath)` for directories. Add a corresponding sandbox test in `test_sandbox.zsh` under "Blocked writes" and a structural check in `test_xclaude.bash` under "Write protection".
+Use `(literal)` for files, `(subpath)` for directories. Add a corresponding sandbox test in `test_sandbox.zsh` under "Blocked writes" and a structural check in `test_rollcage.bash` under "Write protection".
 
 ## Running tests
 
 ```bash
 # DSL pipeline (any platform, fast)
-bash test_xclaude.bash
+bash test_rollcage.bash
 
 # Sandbox integration — all tests (macOS only)
 zsh test_sandbox.zsh
@@ -296,21 +288,25 @@ zsh test_sandbox.zsh --toolchain node
 zsh test_sandbox.zsh --toolchain node,uv
 
 # With a custom project config
-zsh test_sandbox.zsh --with-config path/to/.xclaude
+zsh test_sandbox.zsh --with-config path/to/.rollcage
 
 # Codex base-profile integration
-zsh test_xcodex_sandbox.zsh
+zsh test_codex_sandbox.zsh
 
 # Pi base-profile integration
-zsh test_xpi_sandbox.zsh
+zsh test_pi_sandbox.zsh
+
+# Dispatcher and final control-file protections
+zsh test_dispatch.zsh
+zsh test_protections_sandbox.zsh
 ```
 
 ### Test structure
 
-- `test_xclaude.bash` — tests the DSL pipeline in pure bash. Duplicates the parser/validator/generator functions from `xclaude.lib.zsh` since they use zsh syntax. If you change the DSL logic in `xclaude.lib.zsh`, update the corresponding functions in `test_xclaude.bash` too.
+- `test_rollcage.bash` — tests the DSL pipeline in pure bash. Duplicates the parser/validator/generator functions from `rollcage.lib.zsh` since they use zsh syntax. If you change the DSL logic in `rollcage.lib.zsh`, update the corresponding functions in `test_rollcage.bash` too.
 - `test_sandbox.zsh` — tests real `sandbox-exec` enforcement for the Claude base profile. Runs base profile tests (reads, writes, exec, escape vectors), then auto-discovers and runs `toolchains/*.test.zsh`.
-- `test_xcodex_sandbox.zsh` — tests real `sandbox-exec` enforcement for the Codex base profile and verifies current Codex can start when installed.
-- `test_xpi_sandbox.zsh` — tests real `sandbox-exec` enforcement for the Pi base profile and verifies current Pi can start when installed. Also checks the scoped-exec rule under `~/.pi/agent`.
+- `test_codex_sandbox.zsh` — tests real `sandbox-exec` enforcement for the Codex base profile and verifies current Codex can start when installed.
+- `test_pi_sandbox.zsh` — tests real `sandbox-exec` enforcement for the Pi base profile and verifies current Pi can start when installed. Also checks the scoped-exec rule under `~/.pi/agent`.
 - `toolchains/*.test.zsh` — each file sources `test_helpers.zsh` and tests one toolchain. Creates fixture dirs, verifies access, checks tool usability if installed.
 
 ### Test helpers reference
@@ -329,16 +325,16 @@ zsh test_xpi_sandbox.zsh
 
 ## DSL safety rules
 
-The validator in `xclaude.lib.zsh` enforces:
+The validator in `rollcage.lib.zsh` enforces:
 
-- Only four verbs: `tool`, `allow-read`, `allow-write`, `allow-exec`
+- Directives: `tool`, `pack` (project only), `allow-read`, `allow-write`, `allow-exec`
 - Paths must start with `~/`, `./`, or `/`
 - No bare `~` (too broad)
 - System-path handling is verb-specific:
   - `allow-read` on `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/opt/homebrew` — rejected, base already reads these
   - `allow-write` on those same roots — rejected outright (system paths must not be writable from config)
   - `allow-exec` — only `/bin/*`, `/usr/bin/*`, `/opt/homebrew/*` are rejected as redundant; `/Library/*`, `/usr/libexec/*`, `/usr/local/*`, `/sbin/*`, `/System/*` are allowed so tools like Temurin JDK can be granted exec
-- Paths targeting `.xclaude` as basename rejected (config is protected)
-- Tool names must match a file in `toolchains/`
+- Paths targeting `.rollcage` as basename rejected (config is protected)
+- Tool names must be safe basenames (`[A-Za-z0-9_][A-Za-z0-9_-]*`) matching a file in `toolchains/`; paths and traversal are rejected.
 
-If you add a new validation rule, add it to both `xclaude.lib.zsh` and the duplicate in `test_xclaude.bash`.
+If you add a new validation rule, add it to both `rollcage.lib.zsh` and the duplicate in `test_rollcage.bash`.

@@ -1,11 +1,11 @@
 {
-  "name": "xclaude",
+  "name": "rollcage",
   "version": "1.0.0",
-  "description": "xclaude sandbox skills and hooks",
+  "description": "rollcage sandbox skills and hooks",
   "author": {
     "name": "codewithcheese"
   },
-  "repository": "https://github.com/codewithcheese/xclaude",
+  "repository": "https://github.com/codewithcheese/rollcage",
   "license": "MIT",
   "skills": "./plugin/skills/",
   "hooks": "./plugin/hooks/hooks.json"

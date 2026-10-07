@@ -9,19 +9,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PROFILE="${SCRIPT_DIR}/xclaude.sb"
-PROJECT_DIR="${1:-$PWD}"
+PROJECT_DIR="$(readlink -f "${1:-$PWD}")"
 TMPDIR_RESOLVED="$(readlink -f "${TMPDIR:-/private/tmp}")"
 CACHE_DIR="${TMPDIR_RESOLVED%/T*}/C"
-CAPTURE_FILE="$(mktemp /tmp/xclaude-debug.XXXXXX)"
-DENIAL_LOG="/tmp/xclaude-denials-$$.log"
-SESSION_NAME="xclaude-debug-$$"
+CAPTURE_FILE="$(mktemp /tmp/rollcage-claude-debug.XXXXXX)"
+DENIAL_LOG="/tmp/rollcage-claude-denials-$$.log"
+SESSION_NAME="rollcage-claude-debug-$$"
 TIMEOUT="${2:-8}"
 
 cleanup() {
   # Kill the denial log stream
-  kill "$LOG_PID" 2>/dev/null || true
-  wait "$LOG_PID" 2>/dev/null || true
+  if [[ -n "${LOG_PID:-}" ]]; then
+    kill "$LOG_PID" 2>/dev/null || true
+    wait "$LOG_PID" 2>/dev/null || true
+  fi
 
   # Dump the screen buffer before quitting
   screen -S "$SESSION_NAME" -p 0 -X hardcopy "$CAPTURE_FILE" 2>/dev/null || true
@@ -55,11 +56,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ ! -f "$PROFILE" ]]; then
-  echo "Error: sandbox profile not found at $PROFILE" >&2
-  exit 1
-fi
-
 if ! command -v screen &>/dev/null; then
   echo "Error: screen is required but not found. Install with: brew install screen" >&2
   exit 1
@@ -68,7 +64,7 @@ fi
 echo "Project dir:  $PROJECT_DIR"
 echo "TMPDIR:       $TMPDIR_RESOLVED"
 echo "Cache dir:    $CACHE_DIR"
-echo "Profile:      $PROFILE"
+echo "Launcher:     ${SCRIPT_DIR}/rollcage claude"
 echo "Timeout:      ${TIMEOUT}s"
 echo ""
 
@@ -81,14 +77,8 @@ LOG_PID=$!
 # Launch sandboxed claude in a screen session.
 # Screen provides the PTY that the TUI needs to render.
 # No stdin redirect, no stdout pipe — let screen own the terminal.
-screen -dmS "$SESSION_NAME" bash -c \
-  "sandbox-exec \
-    -D PROJECT_DIR='${PROJECT_DIR}' \
-    -D TMPDIR='${TMPDIR_RESOLVED}' \
-    -D CACHE_DIR='${CACHE_DIR}' \
-    -D HOME='${HOME}' \
-    -f '${PROFILE}' \
-    -- claude; exec bash"
+screen -dmS "$SESSION_NAME" /bin/zsh -c \
+  'cd "$1" && exec "$2" claude' screen "$PROJECT_DIR" "${SCRIPT_DIR}/rollcage"
 
 echo "Started sandboxed claude in screen session '$SESSION_NAME'"
 echo "Waiting ${TIMEOUT}s for TUI to render..."

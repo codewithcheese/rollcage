@@ -1,16 +1,17 @@
 #!/bin/zsh
-# xopencode sandbox integration tests
+# rollcage opencode sandbox integration tests
 # Runs on macOS only. Exercises OpenCode config/auth/state/cache access,
 # auto-approval, downloaded-tool execution, credential isolation, and installed
 # CLI startup.
 #
-# Usage: zsh test_xopencode_sandbox.zsh
+# Usage: zsh test_opencode_sandbox.zsh
 
 set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
-__xopencode_dir="${SCRIPT_DIR}"
-source "${SCRIPT_DIR}/xopencode.lib.zsh"
+__rollcage_dir="${SCRIPT_DIR}"
+source "${SCRIPT_DIR}/rollcage.lib.zsh"
+__rollcage_init opencode "$SCRIPT_DIR"
 
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "SKIP: sandbox tests require macOS" >&2
@@ -31,7 +32,7 @@ t() { __test_name="$1"; }
 
 expect_success() {
   local desc="$1"; shift
-  local __stderr_file="${TMPDIR_RESOLVED}/xopencode-test-stderr-$$.txt"
+  local __stderr_file="${TMPDIR_RESOLVED}/rollcage-opencode-test-stderr-$$.txt"
   if "$@" >/dev/null 2>"$__stderr_file"; then
     __test_pass=$((__test_pass + 1))
   else
@@ -66,12 +67,12 @@ PROJECT_DIR="$(readlink -f "$(mktemp -d)")"
 TMPDIR_RESOLVED="$(readlink -f "${TMPDIR:-/private/tmp}")"
 CACHE_DIR="${TMPDIR_RESOLVED%/T*}/C"
 VOLATILE_DIR="${TMPDIR_RESOLVED%/T*}/X"
-XOPENCODE_DIR="$(readlink -f "${SCRIPT_DIR}")"
+ROLLCAGE_DIR="$(readlink -f "${SCRIPT_DIR}")"
 HOME_DIR="${HOME}"
 
-__xopencode_trust_dir="$(mktemp -d)"
-__xopencode_trusted_file="${__xopencode_trust_dir}/trusted"
-__xopencode_trusted_copies="${__xopencode_trust_dir}/trusted.d"
+__rollcage_trust_dir="$(mktemp -d)"
+__rollcage_trusted_file="${__rollcage_trust_dir}/trusted"
+__rollcage_trusted_copies="${__rollcage_trust_dir}/trusted.d"
 
 __fixtures_created=()
 __ensure_dir() {
@@ -83,7 +84,7 @@ __ensure_dir() {
 }
 
 __ensure_file() {
-  local path="$1" content="${2:-xopencode-test-fixture}"
+  local path="$1" content="${2:-rollcage-opencode-test-fixture}"
   __ensure_dir "${path:h}"
   if [[ ! -f "$path" ]]; then
     /bin/echo "$content" > "$path"
@@ -93,33 +94,33 @@ __ensure_file() {
 
 __ensure_executable() {
   local path="$1"
-  __ensure_file "$path" $'#!/bin/sh\necho xopencode-test\n'
+  __ensure_file "$path" $'#!/bin/sh\necho rollcage-opencode-test\n'
   /bin/chmod +x "$path"
 }
 
-__fake_opencode="${HOME}/.opencode/bin/xopencode-test-$$"
+__fake_opencode="${HOME}/.opencode/bin/rollcage-opencode-test-$$"
 __wrapper_fake_dir="${PROJECT_DIR}/wrapper-bin"
 __wrapper_fake="${__wrapper_fake_dir}/opencode"
-__cache_tool="${HOME}/.cache/opencode/bin/xopencode-tool-test-$$"
-__data_executable="${HOME}/.local/share/opencode/xopencode-data-test-$$"
+__cache_tool="${HOME}/.cache/opencode/bin/rollcage-opencode-tool-test-$$"
+__data_executable="${HOME}/.local/share/opencode/rollcage-opencode-data-test-$$"
 __ensure_executable "$__fake_opencode"
 __ensure_file "$__wrapper_fake" $'#!/bin/sh\ntest "$1" = "--auto"\n'
 /bin/chmod +x "$__wrapper_fake"
 __ensure_executable "$__cache_tool"
 __ensure_executable "$__data_executable"
-__ensure_file "${HOME}/.config/opencode/xopencode-test-readable-$$"
-__ensure_file "${HOME}/.local/share/opencode/xopencode-test-readable-$$"
-__ensure_file "${HOME}/.local/state/opencode/xopencode-test-readable-$$"
-__ensure_file "${HOME}/.cache/opencode/xopencode-test-readable-$$"
-__ensure_file "${HOME}/.config/xopencode/xopencode-test-readable-$$"
-__ensure_file "${HOME}/.claude/skills/xopencode-test-$$/SKILL.md"
-__ensure_file "${HOME}/.agents/skills/xopencode-test-$$/SKILL.md"
+__ensure_file "${HOME}/.config/opencode/rollcage-opencode-test-readable-$$"
+__ensure_file "${HOME}/.local/share/opencode/rollcage-opencode-test-readable-$$"
+__ensure_file "${HOME}/.local/state/opencode/rollcage-opencode-test-readable-$$"
+__ensure_file "${HOME}/.cache/opencode/rollcage-opencode-test-readable-$$"
+__ensure_file "${HOME}/.config/rollcage/trust/opencode/rollcage-opencode-test-readable-$$"
+__ensure_file "${HOME}/.claude/skills/rollcage-opencode-test-$$/SKILL.md"
+__ensure_file "${HOME}/.agents/skills/rollcage-opencode-test-$$/SKILL.md"
 __ensure_file "${HOME}/.ssh/known_hosts"
 
 /bin/echo "hello" > "${PROJECT_DIR}/testfile.txt"
 
 cleanup() {
-  rm -rf "$PROJECT_DIR" "$__xopencode_trust_dir"
+  rm -rf "$PROJECT_DIR" "$__rollcage_trust_dir"
   rm -f "${PROFILE_PATH:-}"
   local f i
   for (( i=${#__fixtures_created[@]}; i >= 1; i-- )); do
@@ -133,20 +134,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-PROFILE="$(__xopencode_assemble "$PROJECT_DIR")"
-PROFILE_PATH="${TMPDIR_RESOLVED}/xopencode-test-$$.sb"
-/bin/echo "$PROFILE" > "$PROFILE_PATH"
+PROFILE="$(__rollcage_assemble "$PROJECT_DIR")"
+PROFILE_PATH="${TMPDIR_RESOLVED}/rollcage-opencode-test-$$.sb"
+printf '%s\n' "$PROFILE" > "$PROFILE_PATH"
 
 sandboxed_with_bin() {
   local allowed_bin="$1"; shift
   cd "$PROJECT_DIR"
-  XCLAUDE_ACTIVE=1 XOPENCODE_ACTIVE=1 OPENCODE_DISABLE_AUTOUPDATE=1 sandbox-exec \
+  ROLLCAGE_ACTIVE=1 ROLLCAGE_CLI=opencode OPENCODE_DISABLE_AUTOUPDATE=1 sandbox-exec \
     -D "PROJECT_DIR=${PROJECT_DIR}" \
     -D "TMPDIR=${TMPDIR_RESOLVED}" \
     -D "CACHE_DIR=${CACHE_DIR}" \
     -D "VOLATILE_DIR=${VOLATILE_DIR}" \
     -D "HOME=${HOME_DIR}" \
-    -D "XOPENCODE_DIR=${XOPENCODE_DIR}" \
+    -D "ROLLCAGE_DIR=${ROLLCAGE_DIR}" \
     -D "OPENCODE_BIN=${allowed_bin}" \
     -f "$PROFILE_PATH" \
     -- "$@"
@@ -156,7 +157,7 @@ sandboxed() {
   sandboxed_with_bin "$__fake_opencode" "$@"
 }
 
-echo "=== xopencode profile ==="
+echo "=== rollcage opencode profile ==="
 echo "  base-common.sb + base-opencode.sb assembled to: ${PROFILE_PATH}"
 echo "  project dir: ${PROJECT_DIR}"
 echo ""
@@ -167,53 +168,53 @@ t "read project file"
 expect_success "allowed" sandboxed cat "${PROJECT_DIR}/testfile.txt"
 
 t "read OpenCode global config"
-expect_success "allowed" sandboxed cat "${HOME}/.config/opencode/xopencode-test-readable-$$"
+expect_success "allowed" sandboxed cat "${HOME}/.config/opencode/rollcage-opencode-test-readable-$$"
 
 t "read OpenCode auth/session data"
-expect_success "allowed" sandboxed cat "${HOME}/.local/share/opencode/xopencode-test-readable-$$"
+expect_success "allowed" sandboxed cat "${HOME}/.local/share/opencode/rollcage-opencode-test-readable-$$"
 
 t "read OpenCode UI state"
-expect_success "allowed" sandboxed cat "${HOME}/.local/state/opencode/xopencode-test-readable-$$"
+expect_success "allowed" sandboxed cat "${HOME}/.local/state/opencode/rollcage-opencode-test-readable-$$"
 
 t "read OpenCode cache"
-expect_success "allowed" sandboxed cat "${HOME}/.cache/opencode/xopencode-test-readable-$$"
+expect_success "allowed" sandboxed cat "${HOME}/.cache/opencode/rollcage-opencode-test-readable-$$"
 
 t "read cross-agent skills"
-expect_success "Claude skill allowed" sandboxed cat "${HOME}/.claude/skills/xopencode-test-$$/SKILL.md"
-expect_success "shared skill allowed" sandboxed cat "${HOME}/.agents/skills/xopencode-test-$$/SKILL.md"
+expect_success "Claude skill allowed" sandboxed cat "${HOME}/.claude/skills/rollcage-opencode-test-$$/SKILL.md"
+expect_success "shared skill allowed" sandboxed cat "${HOME}/.agents/skills/rollcage-opencode-test-$$/SKILL.md"
 
 t "read ~/.ssh remains blocked"
 expect_fail "blocked" sandboxed cat "${HOME}/.ssh/known_hosts"
 
 t "write OpenCode config"
-expect_success "allowed" sandboxed touch "${HOME}/.config/opencode/xopencode-test-write-$$"
-rm -f "${HOME}/.config/opencode/xopencode-test-write-$$"
+expect_success "allowed" sandboxed touch "${HOME}/.config/opencode/rollcage-opencode-test-write-$$"
+rm -f "${HOME}/.config/opencode/rollcage-opencode-test-write-$$"
 
 t "write OpenCode data"
-expect_success "allowed" sandboxed touch "${HOME}/.local/share/opencode/xopencode-test-write-$$"
-rm -f "${HOME}/.local/share/opencode/xopencode-test-write-$$"
+expect_success "allowed" sandboxed touch "${HOME}/.local/share/opencode/rollcage-opencode-test-write-$$"
+rm -f "${HOME}/.local/share/opencode/rollcage-opencode-test-write-$$"
 
 t "write OpenCode state"
-expect_success "allowed" sandboxed touch "${HOME}/.local/state/opencode/xopencode-test-write-$$"
-rm -f "${HOME}/.local/state/opencode/xopencode-test-write-$$"
+expect_success "allowed" sandboxed touch "${HOME}/.local/state/opencode/rollcage-opencode-test-write-$$"
+rm -f "${HOME}/.local/state/opencode/rollcage-opencode-test-write-$$"
 
 t "write OpenCode cache"
-expect_success "allowed" sandboxed touch "${HOME}/.cache/opencode/xopencode-test-write-$$"
-rm -f "${HOME}/.cache/opencode/xopencode-test-write-$$"
+expect_success "allowed" sandboxed touch "${HOME}/.cache/opencode/rollcage-opencode-test-write-$$"
+rm -f "${HOME}/.cache/opencode/rollcage-opencode-test-write-$$"
 
-t "write xopencode trust store remains blocked"
-expect_fail "blocked" sandboxed touch "${HOME}/.config/xopencode/xopencode-test-write-$$"
+t "write rollcage opencode trust store remains blocked"
+expect_fail "blocked" sandboxed touch "${HOME}/.config/rollcage/trust/opencode/rollcage-opencode-test-write-$$"
 
 t "write home root remains blocked"
-expect_fail "blocked" sandboxed touch "${HOME}/xopencode-test-should-not-exist"
+expect_fail "blocked" sandboxed touch "${HOME}/rollcage-opencode-test-should-not-exist"
 
-t "write to existing .xclaude config is blocked"
-/bin/echo "tool node" > "${PROJECT_DIR}/.xclaude"
-expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' >> '${PROJECT_DIR}/.xclaude'"
+t "write to existing .rollcage config is blocked"
+/bin/echo "tool node" > "${PROJECT_DIR}/.rollcage"
+expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' >> '${PROJECT_DIR}/.rollcage'"
 
-t "create .xclaude config is blocked"
-rm -f "${PROJECT_DIR}/.xclaude"
-expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' > '${PROJECT_DIR}/.xclaude'"
+t "create .rollcage config is blocked"
+rm -f "${PROJECT_DIR}/.rollcage"
+expect_fail "blocked" sandboxed /bin/sh -c "echo 'allow-read ~/.ssh' > '${PROJECT_DIR}/.rollcage'"
 
 echo "=== Exec access ==="
 
@@ -227,26 +228,26 @@ t "exec from OpenCode data remains blocked"
 expect_fail "blocked" sandboxed "$__data_executable"
 
 t "tmp script execution remains blocked"
-sandboxed /bin/sh -c "printf '#!/bin/sh\necho bad\n' > /private/tmp/xopencode-exec-$$ && chmod +x /private/tmp/xopencode-exec-$$" 2>/dev/null || true
-if [[ -f "/private/tmp/xopencode-exec-$$" ]]; then
-  expect_fail "blocked" sandboxed "/private/tmp/xopencode-exec-$$"
-  rm -f "/private/tmp/xopencode-exec-$$"
+sandboxed /bin/sh -c "printf '#!/bin/sh\necho bad\n' > /private/tmp/rollcage-opencode-exec-$$ && chmod +x /private/tmp/rollcage-opencode-exec-$$" 2>/dev/null || true
+if [[ -f "/private/tmp/rollcage-opencode-exec-$$" ]]; then
+  expect_fail "blocked" sandboxed "/private/tmp/rollcage-opencode-exec-$$"
+  rm -f "/private/tmp/rollcage-opencode-exec-$$"
 else
   __test_pass=$((__test_pass + 1))
 fi
 
-t "XOPENCODE_ACTIVE is visible"
-expect_success "visible" sandboxed /bin/sh -c 'test "$XOPENCODE_ACTIVE" = 1'
+t "ROLLCAGE_CLI is visible"
+expect_success "visible" sandboxed /bin/sh -c 'test "$ROLLCAGE_CLI" = opencode'
 
-t "shared XCLAUDE_ACTIVE is visible"
-expect_success "visible" sandboxed /bin/sh -c 'test "$XCLAUDE_ACTIVE" = 1'
+t "shared ROLLCAGE_ACTIVE is visible"
+expect_success "visible" sandboxed /bin/sh -c 'test "$ROLLCAGE_ACTIVE" = 1'
 
-t "OpenCode auto-update is disabled inside xopencode"
+t "OpenCode auto-update is disabled inside rollcage opencode"
 expect_success "disabled" sandboxed /bin/sh -c 'test "$OPENCODE_DISABLE_AUTOUPDATE" = 1'
 
-t "xopencode auto-approves OpenCode permissions"
+t "rollcage opencode auto-approves OpenCode permissions"
 expect_success "--auto passed first" /usr/bin/env PATH="${__wrapper_fake_dir}:${PATH}" \
-  "${SCRIPT_DIR}/xopencode"
+  "${SCRIPT_DIR}/rollcage" opencode
 
 t "installed OpenCode can initialize isolated XDG state"
 if opencode_bin="$(command -v opencode 2>/dev/null)"; then

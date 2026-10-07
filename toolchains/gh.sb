@@ -11,7 +11,7 @@
 ;;                secure storage is available; hosts.yml then only records
 ;;                the user, with no oauth_token: field)
 ;; Both must be readable or `gh auth status` reports the token invalid.
-;; base.sb (Claude) already grants keychain read for Claude Code's own
+;; base-claude.sb (Claude) already grants keychain read for Claude Code's own
 ;; OAuth credentials, but base-codex.sb / base-pi.sb do not — Codex and Pi
 ;; keep their own auth in plain files. So the keychain grant lives here,
 ;; scoped to projects that opt into `tool gh`, to make gh work uniformly
@@ -23,6 +23,6 @@
 
 ;; Read — keyring token storage (macOS login keychain database).
 ;; Item-level ACLs are still enforced by securityd; the sandbox can only
-;; grant/deny at the keychain-file level, matching base.sb's own grant.
+;; grant/deny at the keychain-file level, matching base-claude.sb's own grant.
 (allow file-read-data
   (subpath (string-append (param "HOME") "/Library/Keychains")))

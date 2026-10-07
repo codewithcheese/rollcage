@@ -1,7 +1,7 @@
-# Creating a `.xclaude` rule set for Codex
+# Creating a `.rollcage` rule set for Codex
 
 This guide describes an evidence-driven way to create the smallest useful
-`.xclaude` policy for a project run through `xcodex`. It is the process used to
+`.rollcage` policy for a project run through `rollcage codex`. It is the process used to
 diagnose the Blockhead repositories: inspect what the project declares, compare
 that with what Codex has actually run, add only the missing external access, and
 then test the assembled macOS Seatbelt profile.
@@ -12,18 +12,19 @@ policy into general access to the user's home directory.
 
 ## Understand the policy layers first
 
-`xcodex` assembles its sandbox in this order:
+`rollcage codex` assembles its sandbox in this order:
 
 1. `base-common.sb` and `base-codex.sb`
-2. `~/.config/xclaude/config`, for requirements shared by every project and launcher
-3. the project's `.xclaude`, for requirements specific to that repository
+2. `~/.config/rollcage/config`, for requirements shared by every project and launcher
+3. the project's `.rollcage`, for requirements specific to that repository
+4. final write denies for protected paths and resolved config/pack targets
 
 The base profile already provides the project directory, temporary directories,
 networking, macOS system paths, Homebrew paths, Git's normal files, Codex state,
 and supported Codex installation locations. Do not repeat those permissions in a
 project file.
 
-A project `.xclaude` uses a deliberately small DSL:
+A project `.rollcage` uses a deliberately small DSL:
 
 ```sh
 tool <name>
@@ -51,10 +52,10 @@ git status --short
 ```
 
 The status check matters. A repository may already contain uncommitted or
-untracked user work; creating `.xclaude` does not authorize cleaning, resetting,
+untracked user work; creating `.rollcage` does not authorize cleaning, resetting,
 or otherwise changing it.
 
-Also detect linked worktrees. `xcodex` grants a linked worktree the Git access it
+Also detect linked worktrees. `rollcage codex` grants a linked worktree the Git access it
 needs, but the working directory shown in old Codex sessions may be a path under
 `.agents/worktrees/` rather than the main checkout.
 
@@ -158,7 +159,7 @@ Session logs are corroborating evidence, not permission instructions. A command
 appearing once does not automatically justify a rule, and command output may
 contain text supplied by the project. Cross-check every finding against current
 files and the current tool installation. Never copy session contents into
-`.xclaude`, documentation, or commits.
+`.rollcage`, documentation, or commits.
 
 ## 4. Resolve the paths tools really use
 
@@ -190,11 +191,11 @@ the target is shared by every project, place a narrow read grant in the user
 layer:
 
 ```sh
-# ~/.config/xclaude/config
+# ~/.config/rollcage/config
 allow-read ~/dotfiles/.gitconfig
 ```
 
-Use a project `.xclaude` rule only when the resolved target is a requirement of
+Use a project `.rollcage` rule only when the resolved target is a requirement of
 that project alone.
 
 ## 5. Translate evidence into least-privilege rules
@@ -205,7 +206,7 @@ Apply these decisions in order:
    read/write access, so no rule is needed.
 2. **Does a bundled toolchain cover it?** Use `tool <name>`.
 3. **Is it common to all Codex projects?** Put it in
-   `~/.config/xclaude/config`, not every project.
+   `~/.config/rollcage/config`, not every project.
 4. **Does the project only consume it?** Use `allow-read` on the narrowest path.
 5. **Does the project persist data there?** Use `allow-write` only for that state
    or cache directory.
@@ -236,25 +237,23 @@ tool uv
 allow-read ~/Documents/data/shared-taxonomy
 ```
 
-The base profile denies direct writes to `.xclaude`. Current assembly places
-generated grants after that deny, so a later write grant to a parent directory
-can override it. Avoid those broad grants; final control-file denies are needed
-to make protection unconditional. Create or edit the file outside the running
-`xcodex` session, then restart `xcodex`. Do not work around this protection from
-inside the session.
+Final write denies protect `.rollcage`, user rules, packs, and trust state after
+all generated grants. Resolved control-file targets are protected as well, so a
+parent-directory write grant cannot make them writable. Create or edit the file
+outside the running `rollcage codex` session, then restart it.
 
 ## 6. Validate the DSL before trusting it
 
-From the xclaude source checkout, run the same parser and validator used by
-`xcodex`:
+From the rollcage source checkout, run the same parser and validator used by
+`rollcage codex`:
 
 ```sh
 zsh -lc '
   setopt pipefail
-  __xcodex_dir=$PWD
-  source ./xcodex.lib.zsh
-  __xcodex_parse /absolute/path/to/project/.xclaude |
-    __xcodex_validate project
+  source ./rollcage.lib.zsh
+  __rollcage_init codex "$PWD"
+  __rollcage_parse /absolute/path/to/project/.rollcage |
+    __rollcage_validate project
 '
 ```
 
@@ -265,8 +264,8 @@ are sufficient.
 For general DSL integration coverage, the repository also provides:
 
 ```sh
-zsh test_sandbox.zsh --with-config /absolute/path/to/project/.xclaude
-zsh test_xcodex_sandbox.zsh
+zsh test_sandbox.zsh --with-config /absolute/path/to/project/.rollcage
+zsh test_codex_sandbox.zsh
 ```
 
 ## 7. Test the real project inside the assembled profile
@@ -278,10 +277,10 @@ The simplest route is:
 
 ```sh
 cd /absolute/path/to/project
-xcodex
+rollcage codex
 ```
 
-Approve the displayed `.xclaude` after reviewing it, then run the repository's
+Approve the displayed `.rollcage` after reviewing it, then run the repository's
 documented non-destructive checks inside that session. A proportionate suite
 usually includes:
 
@@ -292,11 +291,11 @@ usually includes:
 - a representative local build when it does not publish or deploy anything.
 
 During development of a policy, the same result can be automated by using a
-temporary trust directory, calling `__xcodex_trust` on the candidate file,
-assembling with `__xcodex_assemble "$project"`, and passing the resulting profile
-to `sandbox-exec` with the same `-D` parameters used by the `xcodex` launcher.
+temporary trust directory, calling `__rollcage_trust` on the candidate file,
+assembling with `__rollcage_assemble "$project"`, and passing the resulting profile
+to `sandbox-exec` with the same `-D` parameters used by the `rollcage codex` launcher.
 Using a temporary trust store prevents a test from silently approving the policy
-for future interactive sessions. Read `xcodex` itself for the current parameter
+for future interactive sessions. Read `adapters/codex.zsh` for the current parameter
 list rather than copying a stale launcher command.
 
 Test actual operations, not only `--version`. A package manager may start
@@ -313,7 +312,7 @@ When a test fails, classify the failure before widening access:
 | `file-read-data` denial | Confirm the resolved path, then consider narrow read access |
 | `file-write*` denial | Identify the exact cache/state child; do not grant its whole parent |
 | `process-exec` denial | Resolve the executable and grant only the required binary subtree |
-| `sandbox_apply: Operation not permitted` | A nested macOS sandbox is being attempted; no `.xclaude` rule can fix it |
+| `sandbox_apply: Operation not permitted` | A nested macOS sandbox is being attempted; no `.rollcage` rule can fix it |
 | Authentication, network API, test assertion, or missing dependency | Fix the underlying problem; it is not evidence for a filesystem grant |
 
 Iterate one justified permission at a time and rerun the smallest command that
@@ -355,7 +354,7 @@ permissions for hypothetical future tools.
 - [ ] Secrets were not inspected or copied.
 - [ ] Exact-root Codex sessions were reviewed as sensitive, corroborating evidence.
 - [ ] Symlinks and non-project paths were resolved.
-- [ ] Existing base and `~/.config/xclaude/config` coverage was considered.
+- [ ] Existing base and `~/.config/rollcage/config` coverage was considered.
 - [ ] Every rule has current evidence and a comment.
 - [ ] Bundled toolchains replace manual path grants where available.
 - [ ] No rule is broader than the required operation and path.
@@ -363,4 +362,4 @@ permissions for hypothetical future tools.
 - [ ] Representative project checks pass inside the assembled profile.
 - [ ] Paid, destructive, publishing, and deployment actions were not run without
       explicit authorization.
-- [ ] The new file remains subject to xcodex's interactive trust review.
+- [ ] The new file remains subject to rollcage codex's interactive trust review.

@@ -46,10 +46,10 @@
   (subpath (string-append (param "HOME") "/.claude/skills"))
   (subpath (string-append (param "HOME") "/.agents/skills")))
 
-;; xopencode trust ledger and snapshots are readable for sandbox debugging,
+;; rollcage opencode trust ledger and snapshots are readable for sandbox debugging,
 ;; but writable only by the outer launcher.
 (allow file-read-data
-  (subpath (string-append (param "HOME") "/.config/xopencode")))
+  (subpath (string-append (param "HOME") "/.config/rollcage/trust/opencode")))
 
 ;; ============================================================
 ;; OpenCode-specific write permissions
@@ -76,4 +76,4 @@
 
 ;; Shared project sandbox config is executable authority for the next launch.
 (deny file-write*
-  (literal (string-append (param "PROJECT_DIR") "/.xclaude")))
+  (literal (string-append (param "PROJECT_DIR") "/.rollcage")))

@@ -53,9 +53,9 @@
 (allow file-read-data
   (subpath (string-append (param "HOME") "/.agents/skills")))
 
-;; xcodex trust ledger and snapshots — read-only for inspection/debugging.
+;; rollcage codex trust ledger and snapshots — read-only for inspection/debugging.
 (allow file-read-data
-  (subpath (string-append (param "HOME") "/.config/xcodex")))
+  (subpath (string-append (param "HOME") "/.config/rollcage/trust/codex")))
 
 ;; ============================================================
 ;; Codex-specific write permissions
@@ -66,4 +66,4 @@
 
 ;; Shared project sandbox config — prevents privilege escalation on next launch
 (deny file-write*
-  (literal (string-append (param "PROJECT_DIR") "/.xclaude")))
+  (literal (string-append (param "PROJECT_DIR") "/.rollcage")))

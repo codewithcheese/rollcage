@@ -45,7 +45,7 @@ for __pnpm_cache in \
   "${HOME}/Library/pnpm/store" \
   "${HOME}/Library/pnpm/package-manager-store" \
   "${HOME}/Library/pnpm/.tools/pnpm"; do
-  __pnpm_fixture="${__pnpm_cache}/xclaude-test-$$"
+  __pnpm_fixture="${__pnpm_cache}/rollcage-claude-test-$$"
   tc_fixture_dir "$__pnpm_fixture"
   tc_fixture_file "${__pnpm_fixture}/readable" pnpm-cache-test
   tc_fixture_file "${__pnpm_fixture}/executable" $'#!/bin/sh\necho pnpm-cache-exec'
@@ -61,27 +61,27 @@ done
 
 # The engine lockfile's atomic temp files are allowed only at this level.
 tc_fixture_dir "${HOME}/Library/pnpm/global/v11"
-__pnpm_atomic="${HOME}/Library/pnpm/global/v11/.tmpXclaude$$"
+__pnpm_atomic="${HOME}/Library/pnpm/global/v11/.tmpRollcage$$"
 t "node: pnpm engine atomic lockfile write"
 expect_success "allowed" tc_sandboxed /usr/bin/touch "$__pnpm_atomic"
 rm -f "$__pnpm_atomic"
-tc_fixture_dir "${HOME}/Library/pnpm/global/v11/xclaude-test-$$"
+tc_fixture_dir "${HOME}/Library/pnpm/global/v11/rollcage-claude-test-$$"
 t "node: nested global app temp files not writable"
-expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/global/v11/xclaude-test-$$/.tmpForbidden"
+expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/global/v11/rollcage-claude-test-$$/.tmpForbidden"
 t "node: arbitrary global root files not writable"
-expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/global/v11/xclaude-forbidden-$$"
+expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/global/v11/rollcage-claude-forbidden-$$"
 t "node: lockfile temp pattern requires a literal dot"
-expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/global/v11/xtmpXclaude$$"
+expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/global/v11/xtmpRollcage$$"
 tc_fixture_dir "${HOME}/Library/pnpm/bin"
 t "node: global pnpm bins not writable"
-expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/bin/xclaude-forbidden-$$"
+expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/pnpm/bin/rollcage-claude-forbidden-$$"
 tc_fixture_dir "${HOME}/Library/Preferences/pnpm"
 t "node: pnpm configuration not writable"
-expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/Preferences/pnpm/xclaude-forbidden-$$"
+expect_fail "blocked" tc_sandboxed /usr/bin/touch "${HOME}/Library/Preferences/pnpm/rollcage-claude-forbidden-$$"
 tc_fixture_dir "${HOME}/.pnpm-state"
 t "node: macOS pnpm state writable"
-expect_success "allowed" tc_sandboxed /usr/bin/touch "${HOME}/.pnpm-state/xclaude-test-$$"
-rm -f "${HOME}/.pnpm-state/xclaude-test-$$"
+expect_success "allowed" tc_sandboxed /usr/bin/touch "${HOME}/.pnpm-state/rollcage-claude-test-$$"
+rm -f "${HOME}/.pnpm-state/rollcage-claude-test-$$"
 
 # ── Usability ──
 # Find node binary: try nvm versions first, then fall back to PATH
@@ -154,10 +154,10 @@ if [[ -n "$__pnpm" ]]; then
 
   # A local CLI must run through pnpm's shorthand dispatch, not just --version.
   mkdir -p "${PROJECT_DIR}/pnpm-test/node_modules/.bin"
-  printf '#!/bin/sh\necho pnpm-cli-ok\n' > "${PROJECT_DIR}/pnpm-test/node_modules/.bin/xclaude-probe"
-  chmod +x "${PROJECT_DIR}/pnpm-test/node_modules/.bin/xclaude-probe"
+  printf '#!/bin/sh\necho pnpm-cli-ok\n' > "${PROJECT_DIR}/pnpm-test/node_modules/.bin/rollcage-claude-probe"
+  chmod +x "${PROJECT_DIR}/pnpm-test/node_modules/.bin/rollcage-claude-probe"
   t "node: pnpm dispatches project CLI"
-  expect_success "runs" tc_sandboxed /bin/sh -c "cd '${PROJECT_DIR}/pnpm-test' && '$__pnpm' xclaude-probe"
+  expect_success "runs" tc_sandboxed /bin/sh -c "cd '${PROJECT_DIR}/pnpm-test' && '$__pnpm' rollcage-claude-probe"
 
   # Version pins exercise managed-engine downloads and global lockfile writes.
   mkdir -p "${PROJECT_DIR}/pnpm-pin-test"

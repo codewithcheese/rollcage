@@ -1,0 +1,38 @@
+#!/bin/zsh
+# rollcage — macOS Seatbelt sandbox for supported agent CLIs.
+
+__rollcage_dir="${0:A:h}"
+source "${__rollcage_dir}/rollcage.lib.zsh"
+
+__rollcage_usage() {
+  /bin/cat <<'EOF'
+Usage: rollcage <cli> [args...]
+
+Supported CLIs: claude, codex, pi, omp, opencode
+Rules: .rollcage and ~/.config/rollcage/config
+All arguments after the CLI name are passed to that CLI unchanged.
+EOF
+}
+
+main() {
+  if (( $# == 0 )); then
+    __rollcage_usage >&2
+    return 2
+  fi
+  local cli="$1"
+  shift
+  case "$cli" in
+    -h|--help) __rollcage_usage; return 0 ;;
+    claude|codex|pi|omp|opencode) ;;
+    *) echo "rollcage: unsupported CLI '$cli'" >&2; __rollcage_usage >&2; return 2 ;;
+  esac
+  if ! command -v sandbox-exec &>/dev/null; then
+    echo "rollcage: sandbox-exec not found; refusing to launch without Seatbelt" >&2
+    return 1
+  fi
+  __rollcage_init "$cli" "$__rollcage_dir" || return $?
+  source "${__rollcage_dir}/adapters/${cli}.zsh" || return $?
+  "__rollcage_launch_${cli}" "$@"
+}
+
+main "$@"

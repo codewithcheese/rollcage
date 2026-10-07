@@ -1,46 +1,68 @@
 # Shared sandbox library — DSL parser, validator, SBPL generator, trust gate, assembler
-# Sourced by each launcher-specific library. No side effects on load.
+# Sourced by the dispatcher and tests. No side effects on load.
 #
-# Required variables before use:
-#   __xsandbox_name         Display name / config namespace (e.g. xclaude)
-#   __xsandbox_dir          Installation directory
-# Optional variables:
-#   __xsandbox_base_profile Path to the base SBPL profile
-#   __xsandbox_config_name  Project config basename (default: .<name>)
-#   __xsandbox_user_config  Shared user config path (default: ~/.config/xclaude/config)
-#   __xsandbox_trust_dir    Trust store directory (default: ~/.config/<name>)
-#   __xsandbox_trusted_file Trust ledger path
-#   __xsandbox_trusted_copies Directory of trusted config snapshots
+# Call __rollcage_init <cli> <installation directory> before use. Tests may
+# override config/trust paths after initialization to keep fixtures isolated.
 
-__xsandbox_sync_defaults() {
-  : "${__xsandbox_name:?__xsandbox_name is required}"
-  : "${__xsandbox_dir:?__xsandbox_dir is required}"
-  : "${__xsandbox_base_profile:=${__xsandbox_dir}/base.sb}"
-  : "${__xsandbox_config_name:=.${__xsandbox_name}}"
-  : "${__xsandbox_user_config:=${HOME}/.config/xclaude/config}"
-  : "${__xsandbox_trust_dir:=${HOME}/.config/${__xsandbox_name}}"
-  : "${__xsandbox_trusted_file:=${__xsandbox_trust_dir}/trusted}"
-  : "${__xsandbox_trusted_copies:=${__xsandbox_trust_dir}/trusted.d}"
-  : "${__xsandbox_packs_dir:=${HOME}/.config/${__xsandbox_name}/packs}"
+__rollcage_init() {
+  local cli="$1" install_dir="$2"
+  case "$cli" in
+    claude|codex|pi|omp|opencode) ;;
+    *) echo "rollcage: unsupported CLI '$cli'" >&2; return 2 ;;
+  esac
+  __rollcage_cli="$cli"
+  __rollcage_name="rollcage ${cli}"
+  __rollcage_dir="${install_dir:A}"
+  __rollcage_base_profile="${__rollcage_dir}/base-${cli}.sb"
+  __rollcage_base_profiles=("${__rollcage_dir}/base-common.sb" "$__rollcage_base_profile")
+  __rollcage_config_name=".rollcage"
+  __rollcage_user_config="${HOME}/.config/rollcage/config"
+  __rollcage_packs_dir="${HOME}/.config/rollcage/packs"
+  __rollcage_trust_dir="${HOME}/.config/rollcage/trust/${cli}"
+  __rollcage_trusted_file="${__rollcage_trust_dir}/trusted"
+  __rollcage_trusted_copies="${__rollcage_trust_dir}/trusted.d"
+  local fragment
+  for fragment in "${__rollcage_base_profiles[@]}" "${__rollcage_dir}/base-protections.sb"; do
+    if [[ ! -f "$fragment" ]]; then
+      __rollcage_log "profile fragment not found: $fragment"
+      return 1
+    fi
+  done
+  # Establish mutable trust-state directories outside Seatbelt. Their parents
+  # must exist before the sandbox freezes control-path directory entries.
+  mkdir -p -- "$__rollcage_trusted_copies" || return 1
 }
 
-__xsandbox_log() {
-  echo "${__xsandbox_name}: $*" >&2
+__rollcage_sync_defaults() {
+  : "${__rollcage_name:?__rollcage_name is required}"
+  : "${__rollcage_dir:?__rollcage_dir is required}"
+  : "${__rollcage_base_profile:=${__rollcage_dir}/base-claude.sb}"
+  : "${__rollcage_config_name:=.rollcage}"
+  : "${__rollcage_user_config:=${HOME}/.config/rollcage/config}"
+  : "${__rollcage_cli:=claude}"
+  : "${__rollcage_trust_dir:=${HOME}/.config/rollcage/trust/${__rollcage_cli}}"
+  : "${__rollcage_trusted_file:=${__rollcage_trust_dir}/trusted}"
+  : "${__rollcage_trusted_copies:=${__rollcage_trust_dir}/trusted.d}"
+  : "${__rollcage_packs_dir:=${HOME}/.config/rollcage/packs}"
 }
 
-__xsandbox_read_base_profile() {
-  __xsandbox_sync_defaults
+__rollcage_log() {
+  echo "${__rollcage_name}: $*" >&2
+}
+
+__rollcage_read_base_profile() {
+  __rollcage_sync_defaults
   local -a base_profiles
-  base_profiles=("${__xsandbox_base_profiles[@]}")
+  base_profiles=("${__rollcage_base_profiles[@]}")
   if (( ${#base_profiles[@]} > 0 )); then
     cat "${base_profiles[@]}"
   else
-    cat "$__xsandbox_base_profile"
+    cat "$__rollcage_base_profile"
   fi
 }
 
-__xsandbox_parse() {
-  __xsandbox_sync_defaults
+__rollcage_parse() {
+  __rollcage_sync_defaults
   local file="$1" line verb arg lineno=0
   while IFS= read -r line || [[ -n "$line" ]]; do
     lineno=$((lineno + 1))
@@ -55,94 +77,99 @@ __xsandbox_parse() {
 
     case "$verb" in
       tool)
-        [[ -z "$arg" ]] && { __xsandbox_log "${file}:${lineno}: 'tool' requires a name"; return 1; }
-        echo "tool ${arg}"
+        [[ -z "$arg" ]] && { __rollcage_log "${file}:${lineno}: 'tool' requires a name"; return 1; }
+        printf '%s\n' "tool ${arg}"
         ;;
       pack)
-        [[ -z "$arg" ]] && { __xsandbox_log "${file}:${lineno}: 'pack' requires a name"; return 1; }
+        [[ -z "$arg" ]] && { __rollcage_log "${file}:${lineno}: 'pack' requires a name"; return 1; }
         # Pack names are file basenames under ~/.config/<name>/packs/ — constrain
         # to a safe charset so '..', '/', or leading dashes can't escape the dir.
         if [[ ! "$arg" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]; then
-          __xsandbox_log "${file}:${lineno}: invalid pack name '${arg}' — use [A-Za-z0-9_-], no leading dash"
+          __rollcage_log "${file}:${lineno}: invalid pack name '${arg}' — use [A-Za-z0-9_-], no leading dash"
           return 1
         fi
-        echo "pack ${arg}"
+        printf '%s\n' "pack ${arg}"
         ;;
       allow-read|allow-write|allow-exec)
-        [[ -z "$arg" ]] && { __xsandbox_log "${file}:${lineno}: '${verb}' requires a path"; return 1; }
-        echo "${verb} ${arg}"
+        [[ -z "$arg" ]] && { __rollcage_log "${file}:${lineno}: '${verb}' requires a path"; return 1; }
+        printf '%s\n' "${verb} ${arg}"
         ;;
       *)
-        __xsandbox_log "${file}:${lineno}: unknown directive '${verb}'"
+        __rollcage_log "${file}:${lineno}: unknown directive '${verb}'"
         return 1
         ;;
     esac
   done < "$file"
 }
 
-__xsandbox_validate() {
-  __xsandbox_sync_defaults
+__rollcage_validate() {
+  __rollcage_sync_defaults
   # Source context controls which verbs are legal here:
-  #   user    — ~/.config/xclaude/config (shared by all launchers)
+  #   user    — ~/.config/rollcage/config (shared by all launchers)
   #   project — project <config_name> file
   #   pack    — a file inside ~/.config/<name>/packs/
   # `pack` directives are only legal when source=project (no nesting, no
   # user-level packs — packs exist to reuse config across projects).
   local source="${1:-project}"
-  local line verb arg toolchains_dir="${__xsandbox_dir}/toolchains"
-  local packs_dir="${__xsandbox_packs_dir}"
+  local line verb arg toolchains_dir="${__rollcage_dir}/toolchains"
+  local packs_dir="${__rollcage_packs_dir}"
   while IFS= read -r line; do
     verb="${line%% *}"
     arg="${line#* }"
 
     case "$verb" in
       tool)
-        if [[ ! -f "${toolchains_dir}/${arg}.sb" ]]; then
-          __xsandbox_log "unknown toolchain '${arg}'"
-          __xsandbox_log "available: $(ls "${toolchains_dir}"/*.sb 2>/dev/null | xargs -I{} basename {} .sb | tr '\n' ' ')"
+        # A tool is a bundled basename, never a path to arbitrary raw SBPL.
+        if [[ ! "$arg" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]; then
+          __rollcage_log "invalid toolchain name '${arg}' — use [A-Za-z0-9_-], no leading dash"
           return 1
         fi
-        echo "$line"
+        if [[ ! -f "${toolchains_dir}/${arg}.sb" ]]; then
+          __rollcage_log "unknown toolchain '${arg}'"
+          __rollcage_log "available: $(ls "${toolchains_dir}"/*.sb 2>/dev/null | xargs -I{} basename {} .sb | tr '\n' ' ')"
+          return 1
+        fi
+        printf '%s\n' "$line"
         ;;
       pack)
         case "$source" in
           user)
-            __xsandbox_log "'pack' is not allowed in user config — packs are for project-level reuse only"
+            __rollcage_log "'pack' is not allowed in user config — packs are for project-level reuse only"
             return 1
             ;;
           pack)
-            __xsandbox_log "'pack' cannot be nested inside another pack (pack '${arg}')"
+            __rollcage_log "'pack' cannot be nested inside another pack (pack '${arg}')"
             return 1
             ;;
         esac
         if [[ ! -f "${packs_dir}/${arg}" ]]; then
-          __xsandbox_log "unknown pack '${arg}' — expected file at ${packs_dir}/${arg}"
+          __rollcage_log "unknown pack '${arg}' — expected file at ${packs_dir}/${arg}"
           if [[ -d "$packs_dir" ]]; then
-            __xsandbox_log "available: $(ls "${packs_dir}" 2>/dev/null | tr '\n' ' ')"
+            __rollcage_log "available: $(ls "${packs_dir}" 2>/dev/null | tr '\n' ' ')"
           else
-            __xsandbox_log "packs directory does not exist — create it and add pack files as plain DSL"
+            __rollcage_log "packs directory does not exist — create it and add pack files as plain DSL"
           fi
           return 1
         fi
-        echo "$line"
+        printf '%s\n' "$line"
         ;;
       allow-read|allow-write|allow-exec)
         local prefix2="${arg:0:2}"
         if [[ "$arg" = "~" || "$arg" = "~/" ]]; then
-          __xsandbox_log "bare '~' or '~/' is too broad — use ~/specific/path"
+          __rollcage_log "bare '~' or '~/' is too broad — use ~/specific/path"
           return 1
         elif [[ "$arg" = "./" || "$arg" = "." ]]; then
-          __xsandbox_log "bare './' is too broad — use ./specific/path"
+          __rollcage_log "bare './' is too broad — use ./specific/path"
           return 1
         elif [[ "$prefix2" != "~/" && "$prefix2" != "./" && "${arg:0:1}" != "/" ]]; then
-          __xsandbox_log "invalid path '${arg}' — must start with ~/, ./, or /"
+          __rollcage_log "invalid path '${arg}' — must start with ~/, ./, or /"
           return 1
         fi
         case "$verb" in
           allow-read)
             case "$arg" in
               /System/*|/Library/*|/usr/*|/bin/*|/sbin/*|/opt/homebrew/*)
-                __xsandbox_log "system path '${arg}' is already readable via base profile"
+                __rollcage_log "system path '${arg}' is already readable via base profile"
                 return 1
                 ;;
             esac
@@ -150,7 +177,7 @@ __xsandbox_validate() {
           allow-write)
             case "$arg" in
               /System/*|/Library/*|/usr/*|/bin/*|/sbin/*|/opt/homebrew/*)
-                __xsandbox_log "system path '${arg}' cannot be made writable from project config"
+                __rollcage_log "system path '${arg}' cannot be made writable from project config"
                 return 1
                 ;;
             esac
@@ -158,31 +185,31 @@ __xsandbox_validate() {
           allow-exec)
             case "$arg" in
               /bin/*|/usr/bin/*|/opt/homebrew/*)
-                __xsandbox_log "exec path '${arg}' is already allowed by base profile"
+                __rollcage_log "exec path '${arg}' is already allowed by base profile"
                 return 1
                 ;;
             esac
             ;;
         esac
         local basename="${arg##*/}"
-        if [[ "$basename" = "${__xsandbox_config_name}" ]]; then
-          __xsandbox_log "cannot target '${__xsandbox_config_name}' — sandbox config is protected"
+        if [[ "$basename" = "${__rollcage_config_name}" ]]; then
+          __rollcage_log "cannot target '${__rollcage_config_name}' — sandbox config is protected"
           return 1
         fi
-        echo "$line"
+        printf '%s\n' "$line"
         ;;
     esac
   done
 }
 
-__xsandbox_generate() {
-  __xsandbox_sync_defaults
+__rollcage_generate() {
+  __rollcage_sync_defaults
   # pipefail is required: the `pack` branch recurses through
   # parse|validate|generate, and a failure in any stage must abort
   # the whole expansion (not silently produce an empty fragment).
   setopt local_options pipefail
-  local line verb arg sbpl_path toolchains_dir="${__xsandbox_dir}/toolchains"
-  local packs_dir="${__xsandbox_packs_dir}"
+  local line verb arg sbpl_path toolchains_dir="${__rollcage_dir}/toolchains"
+  local packs_dir="${__rollcage_packs_dir}"
   local pack_file pack_content
   while IFS= read -r line; do
     verb="${line%% *}"
@@ -191,33 +218,33 @@ __xsandbox_generate() {
     case "$verb" in
       tool)
         echo ""
-        echo ";; ── toolchain: ${arg} ──"
+        printf '%s\n' ";; ── toolchain: ${arg} ──"
         cat "${toolchains_dir}/${arg}.sb"
         ;;
       pack)
         # Validator already confirmed file existence and legality in the
         # enclosing source. Recurse with source=pack to forbid nesting.
         pack_file="${packs_dir}/${arg}"
-        pack_content="$(__xsandbox_parse "$pack_file" | __xsandbox_validate pack | __xsandbox_generate)" || return 1
+        pack_content="$(__rollcage_parse "$pack_file" | __rollcage_validate pack | __rollcage_generate)" || return 1
         echo ""
-        echo ";; ── pack: ${arg} (${pack_file/#${HOME}/~}) ──"
+        printf '%s\n' ";; ── pack: ${arg} (${pack_file/#${HOME}/~}) ──"
         printf '%s\n' "$pack_content"
         ;;
       allow-read|allow-write|allow-exec)
-        sbpl_path="$(__xsandbox_path_to_sbpl "$arg")"
+        sbpl_path="$(__rollcage_path_to_sbpl "$arg")"
         echo ""
-        echo ";; ── ${verb}: ${arg} ──"
+        printf '%s\n' ";; ── ${verb}: ${arg} ──"
         case "$verb" in
           allow-read)
-            echo "(allow file-read-data (subpath ${sbpl_path}))"
+            printf '%s\n' "(allow file-read-data (subpath ${sbpl_path}))"
             ;;
           allow-write)
-            echo "(allow file-read-data (subpath ${sbpl_path}))"
-            echo "(allow file-write* (subpath ${sbpl_path}))"
+            printf '%s\n' "(allow file-read-data (subpath ${sbpl_path}))"
+            printf '%s\n' "(allow file-write* (subpath ${sbpl_path}))"
             ;;
           allow-exec)
-            echo "(allow file-read-data (subpath ${sbpl_path}))"
-            echo "(allow process-exec (subpath ${sbpl_path}))"
+            printf '%s\n' "(allow file-read-data (subpath ${sbpl_path}))"
+            printf '%s\n' "(allow process-exec (subpath ${sbpl_path}))"
             ;;
         esac
         ;;
@@ -225,19 +252,18 @@ __xsandbox_generate() {
   done
 }
 
-__xsandbox_path_to_sbpl() {
-  local p="$1"
-  local prefix2="${p:0:2}"
-  if [[ "$prefix2" = "~/" ]]; then
-    echo "(string-append (param \"HOME\") \"/${p:2}\")"
-  elif [[ "$prefix2" = "./" ]]; then
-    echo "(string-append (param \"PROJECT_DIR\") \"/${p:2}\")"
-  elif [[ "${p:0:1}" = "/" ]]; then
-    echo "\"${p}\""
+__rollcage_path_to_sbpl() {
+  local p="$1" prefix2="${1:0:2}"
+  if [[ "$prefix2" == "~/" ]]; then
+    printf '(string-append (param "HOME") %s)\n' "$(__rollcage_quote_sbpl "/${p:2}")"
+  elif [[ "$prefix2" == "./" ]]; then
+    printf '(string-append (param "PROJECT_DIR") %s)\n' "$(__rollcage_quote_sbpl "/${p:2}")"
+  elif [[ "${p:0:1}" == "/" ]]; then
+    __rollcage_quote_sbpl "$p"
   fi
 }
 
-__xsandbox_file_hash() {
+__rollcage_file_hash() {
   shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1
 }
 
@@ -248,8 +274,8 @@ __xsandbox_file_hash() {
 #
 #   in repo:    repo:/abs/path/to/.git
 #   not in repo: path:/abs/path/to/file
-__xsandbox_trust_scope() {
-  __xsandbox_sync_defaults
+__rollcage_trust_scope() {
+  __rollcage_sync_defaults
   local file="$1"
   local dir="${file:h}"
   local common_dir
@@ -258,85 +284,69 @@ __xsandbox_trust_scope() {
       /*) common_dir="$(readlink -f "$common_dir")" ;;
       *)  common_dir="$(readlink -f "${dir}/${common_dir}")" ;;
     esac
-    echo "repo:${common_dir}"
+    printf '%s\n' "repo:${common_dir}"
   else
-    echo "path:$(readlink -f "$file")"
+    printf '%s\n' "path:$(readlink -f "$file")"
   fi
 }
 
-__xsandbox_path_key() {
-  echo -n "$1" | shasum -a 256 | cut -d' ' -f1
+__rollcage_path_key() {
+  printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
 }
 
 # Snapshot key for a (project, pack) pair. Keyed on the project's trust
 # scope (repo: or path:) so worktrees of the same repo share pack trust
-# while unrelated projects remain independent. Different name from the
-# legacy key (`__xsandbox_pack_key_legacy`) so check_pack_trust can fall
-# back to the old key during migration.
-__xsandbox_pack_key() {
+# while unrelated projects remain independent.
+__rollcage_pack_key() {
   local pack_file="$1" project_config="$2"
   local pack_name="${pack_file##*/}"
-  local scope="$(__xsandbox_trust_scope "$project_config")"
-  echo -n "${scope}|pack|${pack_name}" | shasum -a 256 | cut -d' ' -f1
-}
-
-__xsandbox_pack_key_legacy() {
-  local pack_file="$1" project_config="$2"
-  local pack_name="${pack_file##*/}"
-  echo -n "${project_config}|pack|${pack_name}" | shasum -a 256 | cut -d' ' -f1
+  local scope="$(__rollcage_trust_scope "$project_config")"
+  printf '%s' "${scope}|pack|${pack_name}" | shasum -a 256 | cut -d' ' -f1
 }
 
 # Trust ledger entry formats:
 #   in-repo:  "<hash> # repo:<git_common_dir> @ <file_path>"
 #   non-git:  "<hash> # path:<resolved_file_path>"
-#   legacy:   "<hash> # <file_path>"     (read-only compat; trust() rewrites)
 #
-# Lookup matches all three. trust() always writes the new format and removes
-# any prior entry for the same scope OR for the legacy file path so the
-# ledger stays a single source of truth as users upgrade.
+# trust() replaces prior entries for the same scope. There is no legacy lookup.
 
-__xsandbox_is_trusted() {
-  __xsandbox_sync_defaults
-  local file="$1" hash scope new_exact new_prefix legacy_exact line
-  [[ ! -f "$__xsandbox_trusted_file" ]] && return 1
-  hash="$(__xsandbox_file_hash "$file")"
-  scope="$(__xsandbox_trust_scope "$file")"
+__rollcage_is_trusted() {
+  __rollcage_sync_defaults
+  local file="$1" hash scope new_exact new_prefix line
+  [[ ! -f "$__rollcage_trusted_file" ]] && return 1
+  hash="$(__rollcage_file_hash "$file")"
+  scope="$(__rollcage_trust_scope "$file")"
   new_exact="${hash} # ${scope}"
   new_prefix="${hash} # ${scope} @ "
-  legacy_exact="${hash} # ${file}"
   while IFS= read -r line; do
     [[ "$line" = "$new_exact" ]] && return 0
     [[ "$line" = "${new_prefix}"* ]] && return 0
-    [[ "$line" = "$legacy_exact" ]] && return 0
-  done < "$__xsandbox_trusted_file"
+  done < "$__rollcage_trusted_file"
   return 1
 }
 
-__xsandbox_was_previously_trusted() {
-  __xsandbox_sync_defaults
-  local file="$1" scope new_exact_suffix new_substr legacy_suffix line
-  [[ ! -f "$__xsandbox_trusted_file" ]] && return 1
-  scope="$(__xsandbox_trust_scope "$file")"
+__rollcage_was_previously_trusted() {
+  __rollcage_sync_defaults
+  local file="$1" scope new_exact_suffix new_substr line
+  [[ ! -f "$__rollcage_trusted_file" ]] && return 1
+  scope="$(__rollcage_trust_scope "$file")"
   new_exact_suffix=" # ${scope}"
   new_substr=" # ${scope} @ "
-  legacy_suffix=" # ${file}"
   while IFS= read -r line; do
     [[ "$line" = *"$new_substr"* ]] && return 0
     [[ "$line" = *"$new_exact_suffix" ]] && return 0
-    [[ "$line" = *"$legacy_suffix" ]] && return 0
-  done < "$__xsandbox_trusted_file"
+  done < "$__rollcage_trusted_file"
   return 1
 }
 
-__xsandbox_trust() {
-  __xsandbox_sync_defaults
+__rollcage_trust() {
+  __rollcage_sync_defaults
   local file="$1"
-  mkdir -p "$__xsandbox_trust_dir" "$__xsandbox_trusted_copies"
-  local hash="$(__xsandbox_file_hash "$file")"
-  local scope="$(__xsandbox_trust_scope "$file")"
+  mkdir -p "$__rollcage_trust_dir" "$__rollcage_trusted_copies"
+  local hash="$(__rollcage_file_hash "$file")"
+  local scope="$(__rollcage_trust_scope "$file")"
   local new_exact_suffix=" # ${scope}"
   local new_substr=" # ${scope} @ "
-  local legacy_suffix=" # ${file}"
   local entry
   case "$scope" in
     # Repo scope: include @ <file> tail so the entry shows where the file lived.
@@ -344,99 +354,91 @@ __xsandbox_trust() {
     # Path scope: file path is already in the scope key — no redundant tail.
     *)      entry="${hash} # ${scope}" ;;
   esac
-  if [[ -f "$__xsandbox_trusted_file" ]]; then
-    : > "${__xsandbox_trusted_file}.tmp"
+  if [[ -f "$__rollcage_trusted_file" ]]; then
+    : > "${__rollcage_trusted_file}.tmp"
     local line
     while IFS= read -r line; do
       [[ "$line" = *"$new_substr"* ]]      && continue   # drop in-repo entries for this scope
       [[ "$line" = *"$new_exact_suffix" ]] && continue   # drop path-scope entries for this scope
-      [[ "$line" = *"$legacy_suffix" ]]    && continue   # drop legacy entry for this exact path
-      printf '%s\n' "$line" >> "${__xsandbox_trusted_file}.tmp"
-    done < "$__xsandbox_trusted_file"
-    mv "${__xsandbox_trusted_file}.tmp" "$__xsandbox_trusted_file"
+      printf '%s\n' "$line" >> "${__rollcage_trusted_file}.tmp"
+    done < "$__rollcage_trusted_file"
+    mv "${__rollcage_trusted_file}.tmp" "$__rollcage_trusted_file"
   fi
-  echo "$entry" >> "$__xsandbox_trusted_file"
-  cp "$file" "${__xsandbox_trusted_copies}/$(__xsandbox_path_key "$scope")"
+  printf '%s\n' "$entry" >> "$__rollcage_trusted_file"
+  cp "$file" "${__rollcage_trusted_copies}/$(__rollcage_path_key "$scope")"
 }
 
 # Pack trust ledger entry formats:
 #   in-repo:  "<pack_hash> # repo:<git_common_dir> pack <pack_name> @ <project_config>"
 #   non-git:  "<pack_hash> # path:<resolved_project_config> pack <pack_name>"
-#   legacy:  "<pack_hash> # <project_config> pack <pack_name>"
 #
 # Scope = trust_scope(project_config). Sharing follows the project: worktrees
 # of the same repo inherit pack trust at the same content hash; different
 # repos always re-prompt.
 
-__xsandbox_is_pack_trusted_for_project() {
-  __xsandbox_sync_defaults
+__rollcage_is_pack_trusted_for_project() {
+  __rollcage_sync_defaults
   local pack_file="$1" project_config="$2"
-  [[ ! -f "$__xsandbox_trusted_file" ]] && return 1
-  local hash="$(__xsandbox_file_hash "$pack_file")"
+  [[ ! -f "$__rollcage_trusted_file" ]] && return 1
+  local hash="$(__rollcage_file_hash "$pack_file")"
   local pack_name="${pack_file##*/}"
-  local scope="$(__xsandbox_trust_scope "$project_config")"
+  local scope="$(__rollcage_trust_scope "$project_config")"
   local new_exact="${hash} # ${scope} pack ${pack_name}"
   local new_prefix="${hash} # ${scope} pack ${pack_name} @ "
-  local legacy_exact="${hash} # ${project_config} pack ${pack_name}"
   local line
   while IFS= read -r line; do
     [[ "$line" = "$new_exact" ]]      && return 0
     [[ "$line" = "${new_prefix}"* ]]  && return 0
-    [[ "$line" = "$legacy_exact" ]]   && return 0
-  done < "$__xsandbox_trusted_file"
+  done < "$__rollcage_trusted_file"
   return 1
 }
 
-__xsandbox_was_pack_previously_trusted_for_project() {
-  __xsandbox_sync_defaults
+__rollcage_was_pack_previously_trusted_for_project() {
+  __rollcage_sync_defaults
   local pack_file="$1" project_config="$2"
-  [[ ! -f "$__xsandbox_trusted_file" ]] && return 1
+  [[ ! -f "$__rollcage_trusted_file" ]] && return 1
   local pack_name="${pack_file##*/}"
-  local scope="$(__xsandbox_trust_scope "$project_config")"
+  local scope="$(__rollcage_trust_scope "$project_config")"
   local new_exact_suffix=" # ${scope} pack ${pack_name}"
   local new_substr=" # ${scope} pack ${pack_name} @ "
-  local legacy_suffix=" # ${project_config} pack ${pack_name}"
   local line
   while IFS= read -r line; do
     [[ "$line" = *"$new_substr"* ]]      && return 0
     [[ "$line" = *"$new_exact_suffix" ]] && return 0
-    [[ "$line" = *"$legacy_suffix" ]]    && return 0
-  done < "$__xsandbox_trusted_file"
+  done < "$__rollcage_trusted_file"
   return 1
 }
 
-__xsandbox_trust_pack_for_project() {
-  __xsandbox_sync_defaults
+__rollcage_trust_pack_for_project() {
+  __rollcage_sync_defaults
   local pack_file="$1" project_config="$2"
-  mkdir -p "$__xsandbox_trust_dir" "$__xsandbox_trusted_copies"
-  local hash="$(__xsandbox_file_hash "$pack_file")"
+  mkdir -p "$__rollcage_trust_dir" "$__rollcage_trusted_copies"
+  local hash="$(__rollcage_file_hash "$pack_file")"
   local pack_name="${pack_file##*/}"
-  local scope="$(__xsandbox_trust_scope "$project_config")"
+  local scope="$(__rollcage_trust_scope "$project_config")"
   local new_exact_suffix=" # ${scope} pack ${pack_name}"
   local new_substr=" # ${scope} pack ${pack_name} @ "
-  local legacy_suffix=" # ${project_config} pack ${pack_name}"
   local entry
   case "$scope" in
     repo:*) entry="${hash} # ${scope} pack ${pack_name} @ ${project_config}" ;;
     *)      entry="${hash} # ${scope} pack ${pack_name}" ;;
   esac
-  if [[ -f "$__xsandbox_trusted_file" ]]; then
-    : > "${__xsandbox_trusted_file}.tmp"
+  if [[ -f "$__rollcage_trusted_file" ]]; then
+    : > "${__rollcage_trusted_file}.tmp"
     local line
     while IFS= read -r line; do
       [[ "$line" = *"$new_substr"* ]]      && continue
       [[ "$line" = *"$new_exact_suffix" ]] && continue
-      [[ "$line" = *"$legacy_suffix" ]]    && continue
-      printf '%s\n' "$line" >> "${__xsandbox_trusted_file}.tmp"
-    done < "$__xsandbox_trusted_file"
-    mv "${__xsandbox_trusted_file}.tmp" "$__xsandbox_trusted_file"
+      printf '%s\n' "$line" >> "${__rollcage_trusted_file}.tmp"
+    done < "$__rollcage_trusted_file"
+    mv "${__rollcage_trusted_file}.tmp" "$__rollcage_trusted_file"
   fi
-  echo "$entry" >> "$__xsandbox_trusted_file"
-  cp "$pack_file" "${__xsandbox_trusted_copies}/$(__xsandbox_pack_key "$pack_file" "$project_config")"
+  printf '%s\n' "$entry" >> "$__rollcage_trusted_file"
+  cp "$pack_file" "${__rollcage_trusted_copies}/$(__rollcage_pack_key "$pack_file" "$project_config")"
 }
 
-__xsandbox_color_enabled() {
-  case "${XSANDBOX_COLOR:-auto}" in
+__rollcage_color_enabled() {
+  case "${ROLLCAGE_COLOR:-auto}" in
     always) return 0 ;;
     never)  return 1 ;;
     auto)
@@ -448,8 +450,8 @@ __xsandbox_color_enabled() {
   esac
 }
 
-__xsandbox_colorize_diff() {
-  if ! __xsandbox_color_enabled; then
+__rollcage_colorize_diff() {
+  if ! __rollcage_color_enabled; then
     cat
     return
   fi
@@ -487,8 +489,8 @@ __xsandbox_colorize_diff() {
   '
 }
 
-__xsandbox_colorize_new() {
-  if ! __xsandbox_color_enabled; then
+__rollcage_colorize_new() {
+  if ! __rollcage_color_enabled; then
     cat
     return
   fi
@@ -503,7 +505,7 @@ __xsandbox_colorize_new() {
   '
 }
 
-__xsandbox_summarize_diff() {
+__rollcage_summarize_diff() {
   # One-line verb-grouped summary of a diff between two files.
   # Format: "  +1 exec  +1 write  +1 tool  -1 read" — zero-count verbs omitted.
   # Writes nothing if both files are identical.
@@ -529,7 +531,7 @@ __xsandbox_summarize_diff() {
   fi
 
   local C="" G="" Y="" M="" R="" Z="" B=""
-  if __xsandbox_color_enabled; then
+  if __rollcage_color_enabled; then
     C=$'\e[36m'; G=$'\e[32m'; Y=$'\e[33m'; M=$'\e[35m'; R=$'\e[31m'; Z=$'\e[0m'; B=$'\e[1m'
   fi
   # Order: exec, write, tool, read (most-to-least capable), additions first.
@@ -550,7 +552,7 @@ __xsandbox_summarize_diff() {
   printf '  %s\n' "$out"
 }
 
-__xsandbox_summarize_new() {
+__rollcage_summarize_new() {
   # One-line verb-grouped summary of a single config file (no signs).
   local file="$1"
   local tool_n=0 read_n=0 write_n=0 exec_n=0
@@ -571,7 +573,7 @@ __xsandbox_summarize_new() {
   fi
 
   local C="" G="" Y="" M="" Z="" B=""
-  if __xsandbox_color_enabled; then
+  if __rollcage_color_enabled; then
     C=$'\e[36m'; G=$'\e[32m'; Y=$'\e[33m'; M=$'\e[35m'; Z=$'\e[0m'; B=$'\e[1m'
   fi
   local segs=()
@@ -587,50 +589,44 @@ __xsandbox_summarize_new() {
   printf '  %s\n' "$out"
 }
 
-__xsandbox_check_trust() {
-  __xsandbox_sync_defaults
+__rollcage_check_trust() {
+  __rollcage_sync_defaults
   local file="$1"
   [[ ! -f "$file" ]] && return 0
-  __xsandbox_is_trusted "$file" && return 0
+  __rollcage_is_trusted "$file" && return 0
 
-  local scope="$(__xsandbox_trust_scope "$file")"
-  local trusted_copy="${__xsandbox_trusted_copies}/$(__xsandbox_path_key "$scope")"
-  # Fall back to the legacy snapshot key (hash of the file path) so users
-  # upgrading from a path-keyed ledger still see a diff on the first re-trust.
-  if [[ ! -f "$trusted_copy" ]]; then
-    trusted_copy="${__xsandbox_trusted_copies}/$(__xsandbox_path_key "$file")"
-  fi
-
-  if __xsandbox_was_previously_trusted "$file" && [[ -f "$trusted_copy" ]]; then
-    __xsandbox_log "config changed: ${file}"
-    __xsandbox_summarize_diff "$trusted_copy" "$file" >&2
+  local scope="$(__rollcage_trust_scope "$file")"
+  local trusted_copy="${__rollcage_trusted_copies}/$(__rollcage_path_key "$scope")"
+  if __rollcage_was_previously_trusted "$file" && [[ -f "$trusted_copy" ]]; then
+    __rollcage_log "config changed: ${file}"
+    __rollcage_summarize_diff "$trusted_copy" "$file" >&2
     echo "─────────────────────────────────────" >&2
     diff -u "$trusted_copy" "$file" --label "trusted" --label "current" \
-      | __xsandbox_colorize_diff >&2 || true
+      | __rollcage_colorize_diff >&2 || true
     echo "─────────────────────────────────────" >&2
   else
-    __xsandbox_log "new config: ${file}"
-    __xsandbox_summarize_new "$file" >&2
+    __rollcage_log "new config: ${file}"
+    __rollcage_summarize_new "$file" >&2
     echo "─────────────────────────────────────" >&2
-    __xsandbox_colorize_new < "$file" >&2
+    __rollcage_colorize_new < "$file" >&2
     echo "─────────────────────────────────────" >&2
   fi
 
   local PB="" PZ=""
-  if __xsandbox_color_enabled; then
+  if __rollcage_color_enabled; then
     PB=$'\e[1m'
     PZ=$'\e[0m'
   fi
-  echo -n "${PB}${__xsandbox_name}: allow this config? [y/N]${PZ} " >&2
+  echo -n "${PB}${__rollcage_name}: allow this config? [y/N]${PZ} " >&2
   local reply
   read -r reply
   case "$reply" in
     [yY]|[yY][eE][sS])
-      __xsandbox_trust "$file"
+      __rollcage_trust "$file"
       return 0
       ;;
     *)
-      __xsandbox_log "denied"
+      __rollcage_log "denied"
       return 1
       ;;
   esac
@@ -640,54 +636,49 @@ __xsandbox_check_trust() {
 # already trusted for this project (prints a reminder line + summary so the
 # user still sees what's active). Prompts on new, changed, or never-seen-
 # for-this-project packs. Return 0 on approval (or no-op), 1 on denial.
-__xsandbox_check_pack_trust() {
-  __xsandbox_sync_defaults
+__rollcage_check_pack_trust() {
+  __rollcage_sync_defaults
   local pack_file="$1" project_config="$2"
   [[ ! -f "$pack_file" ]] && return 0  # missing pack handled by validator
   local pack_name="${pack_file##*/}"
 
-  if __xsandbox_is_pack_trusted_for_project "$pack_file" "$project_config"; then
-    __xsandbox_log "using pack ${pack_name} (trusted)"
-    __xsandbox_summarize_new "$pack_file" >&2
+  if __rollcage_is_pack_trusted_for_project "$pack_file" "$project_config"; then
+    __rollcage_log "using pack ${pack_name} (trusted)"
+    __rollcage_summarize_new "$pack_file" >&2
     return 0
   fi
 
-  local snapshot="${__xsandbox_trusted_copies}/$(__xsandbox_pack_key "$pack_file" "$project_config")"
-  # Legacy snapshot fallback for users upgrading from path-keyed pack trust.
-  if [[ ! -f "$snapshot" ]]; then
-    snapshot="${__xsandbox_trusted_copies}/$(__xsandbox_pack_key_legacy "$pack_file" "$project_config")"
-  fi
-
-  if __xsandbox_was_pack_previously_trusted_for_project "$pack_file" "$project_config" && [[ -f "$snapshot" ]]; then
-    __xsandbox_log "pack changed: ${pack_name} (for ${project_config})"
-    __xsandbox_summarize_diff "$snapshot" "$pack_file" >&2
+  local snapshot="${__rollcage_trusted_copies}/$(__rollcage_pack_key "$pack_file" "$project_config")"
+  if __rollcage_was_pack_previously_trusted_for_project "$pack_file" "$project_config" && [[ -f "$snapshot" ]]; then
+    __rollcage_log "pack changed: ${pack_name} (for ${project_config})"
+    __rollcage_summarize_diff "$snapshot" "$pack_file" >&2
     echo "─────────────────────────────────────" >&2
     diff -u "$snapshot" "$pack_file" --label "trusted" --label "current" \
-      | __xsandbox_colorize_diff >&2 || true
+      | __rollcage_colorize_diff >&2 || true
     echo "─────────────────────────────────────" >&2
   else
-    __xsandbox_log "new pack: ${pack_name} (for ${project_config})"
-    __xsandbox_summarize_new "$pack_file" >&2
+    __rollcage_log "new pack: ${pack_name} (for ${project_config})"
+    __rollcage_summarize_new "$pack_file" >&2
     echo "─────────────────────────────────────" >&2
-    __xsandbox_colorize_new < "$pack_file" >&2
+    __rollcage_colorize_new < "$pack_file" >&2
     echo "─────────────────────────────────────" >&2
   fi
 
   local PB="" PZ=""
-  if __xsandbox_color_enabled; then
+  if __rollcage_color_enabled; then
     PB=$'\e[1m'
     PZ=$'\e[0m'
   fi
-  echo -n "${PB}${__xsandbox_name}: allow pack ${pack_name} for this project? [y/N]${PZ} " >&2
+  echo -n "${PB}${__rollcage_name}: allow pack ${pack_name} for this project? [y/N]${PZ} " >&2
   local reply
   read -r reply
   case "$reply" in
     [yY]|[yY][eE][sS])
-      __xsandbox_trust_pack_for_project "$pack_file" "$project_config"
+      __rollcage_trust_pack_for_project "$pack_file" "$project_config"
       return 0
       ;;
     *)
-      __xsandbox_log "pack ${pack_name} denied"
+      __rollcage_log "pack ${pack_name} denied"
       return 1
       ;;
   esac
@@ -696,8 +687,8 @@ __xsandbox_check_pack_trust() {
 # Walks the project config for `pack <name>` references and trust-gates
 # each one in the context of this project. Stops at the first denial so
 # the user sees a clean "pack X denied" error instead of a cascade.
-__xsandbox_check_pack_trusts() {
-  __xsandbox_sync_defaults
+__rollcage_check_pack_trusts() {
+  __rollcage_sync_defaults
   local project_config="$1"
   [[ ! -f "$project_config" ]] && return 0
   local line name pack_file
@@ -711,26 +702,33 @@ __xsandbox_check_pack_trusts() {
   while IFS= read -r line <&3; do
     [[ "$line" = "pack "* ]] || continue
     name="${line#pack }"
-    pack_file="${__xsandbox_packs_dir}/${name}"
-    if ! __xsandbox_check_pack_trust "$pack_file" "$project_config"; then
+    pack_file="${__rollcage_packs_dir}/${name}"
+    if ! __rollcage_check_pack_trust "$pack_file" "$project_config"; then
       exec 3<&-
       return 1
     fi
-  done 3< <(__xsandbox_parse "$project_config" 2>/dev/null || true)
+  done 3< <(__rollcage_parse "$project_config" 2>/dev/null || true)
   exec 3<&-
   return 0
 }
 
-__xsandbox_assemble() {
-  __xsandbox_sync_defaults
+__rollcage_assemble() {
+  __rollcage_sync_defaults
   # Without pipefail, a parse failure early in the pipeline is masked by
   # the later stages' zero exit. The assembler must abort on any failure.
   setopt local_options pipefail
   local project_dir="$1"
-  local project_config="${project_dir}/${__xsandbox_config_name}"
-  local assembled generated
+  local project_config="${project_dir}/${__rollcage_config_name}"
+  local assembled generated config_candidate
+  for config_candidate in "$project_config" "$__rollcage_user_config"; do
+    [[ -e "$config_candidate" || -L "$config_candidate" ]] || continue
+    if [[ ! -f "$config_candidate" || ! -r "$config_candidate" ]]; then
+      __rollcage_log "sandbox config must resolve to a readable regular file: $config_candidate"
+      return 1
+    fi
+  done
 
-  assembled="$(__xsandbox_read_base_profile)"
+  assembled="$(__rollcage_read_base_profile)" || return 1
 
   # Linked git worktree: auto-grant read on the main checkout so tools like
   # `git -C <main>`, branch comparison, and reading sibling files work from
@@ -755,44 +753,111 @@ __xsandbox_assemble() {
   if [[ -n "$main_worktree" ]]; then
     assembled+=$'\n\n;; ============================================================'
     assembled+=$'\n;; Linked worktree: read grant for main checkout\n;; ============================================================'
-    assembled+=$'\n(allow file-read-data (subpath "'"${main_worktree}"$'"))'
+    assembled+=$'\n(allow file-read-data (subpath '"$(__rollcage_quote_sbpl "$main_worktree")"'))'
     # Git operations from a linked worktree write to the shared .git/
     # (per-worktree state under worktrees/<name>/, plus shared objects/,
     # refs/, logs/). Allow that, but deny hooks/ and config — those are
     # privilege-escalation paths (hook scripts run on next git op in main;
     # config can redirect remotes). Deny-after-allow uses last-match-wins.
     assembled+=$'\n;; --- shared .git/ writes (minus hooks/ and config) ---'
-    assembled+=$'\n(allow file-write* (subpath "'"${common_dir}"$'"))'
-    assembled+=$'\n(deny file-write* (subpath "'"${common_dir}"$'/hooks"))'
-    assembled+=$'\n(deny file-write* (literal "'"${common_dir}"$'/config"))'
+    assembled+=$'\n(allow file-write* (subpath '"$(__rollcage_quote_sbpl "$common_dir")"'))'
+    assembled+=$'\n(deny file-write* (subpath '"$(__rollcage_quote_sbpl "${common_dir}/hooks")"'))'
+    assembled+=$'\n(deny file-write* (literal '"$(__rollcage_quote_sbpl "${common_dir}/config")"'))'
   fi
 
-  if [[ -f "$__xsandbox_user_config" ]]; then
-    generated="$(__xsandbox_parse "$__xsandbox_user_config" | __xsandbox_validate user | __xsandbox_generate)" || return 1
+  if [[ -f "$__rollcage_user_config" ]]; then
+    generated="$(__rollcage_parse "$__rollcage_user_config" | __rollcage_validate user | __rollcage_generate)" || return 1
     if [[ -n "$generated" ]]; then
       assembled+=$'\n\n;; ============================================================'
-      assembled+=$'\n;; User config: '"${__xsandbox_user_config/#${HOME}/~}"$'\n;; ============================================================'
+      assembled+=$'\n;; User config: '"${__rollcage_user_config/#${HOME}/~}"$'\n;; ============================================================'
       assembled+="$generated"
     fi
   fi
 
   if [[ -f "$project_config" ]]; then
     # Project config must be trusted. Denial exits — no base-only fallback.
-    if ! __xsandbox_check_trust "$project_config"; then
+    if ! __rollcage_check_trust "$project_config"; then
       return 1
     fi
     # Every pack referenced from the project gets its own per-project
     # trust check. Denial exits — see above.
-    if ! __xsandbox_check_pack_trusts "$project_config"; then
+    if ! __rollcage_check_pack_trusts "$project_config"; then
       return 1
     fi
-    generated="$(__xsandbox_parse "$project_config" | __xsandbox_validate project | __xsandbox_generate)" || return 1
+    generated="$(__rollcage_parse "$project_config" | __rollcage_validate project | __rollcage_generate)" || return 1
     if [[ -n "$generated" ]]; then
       assembled+=$'\n\n;; ============================================================'
-      assembled+=$'\n;; Project config: '"${__xsandbox_config_name}"$'\n;; ============================================================'
+      assembled+=$'\n;; Project config: '"${__rollcage_config_name}"$'\n;; ============================================================'
       assembled+="$generated"
     fi
   fi
 
-  echo "$assembled"
+  assembled+=$'\n\n;; Final protections: generated grants cannot override these denies\n'
+  assembled+="$(cat "${__rollcage_dir}/base-protections.sb")" || return 1
+  local control_path resolved_path pack_line pack_name start parent protected_parent
+  local container physical_container physical_parent partial_entry
+  local -a control_paths
+  local -A protected_parents resolved_containers
+  control_paths=("${HOME}/.config/rollcage" "$project_config" "$__rollcage_user_config" "$__rollcage_packs_dir" "$__rollcage_trust_dir")
+  if [[ -f "$project_config" ]]; then
+    while IFS= read -r pack_line; do
+      [[ "$pack_line" == 'pack '* ]] || continue
+      pack_name="${pack_line#pack }"
+      control_paths+=("${__rollcage_packs_dir}/${pack_name}")
+    done < <(__rollcage_parse "$project_config")
+  fi
+  if [[ -n "$main_worktree" ]]; then
+    control_paths+=("${common_dir}/hooks" "${common_dir}/config")
+  fi
+  # Deny resolved targets as well as the fixed paths: configs and packs may
+  # be stowed/symlinked into otherwise writable directories.
+  for control_path in "${control_paths[@]}"; do
+    resolved_path="$(readlink -f "$control_path" 2>/dev/null)" || continue
+    [[ -n "$resolved_path" ]] || continue
+    local filter=literal
+    [[ -d "$resolved_path" ]] && filter=subpath
+    assembled+=$'\n;; Protect resolved sandbox control path\n(deny file-write* ('"$filter"' '"$(__rollcage_quote_sbpl "$resolved_path")"'))'
+    # Freeze both the logical and physical ancestry. Otherwise an agent can
+    # rename a parent and replace it with a symlink to an unprotected location.
+    # Only directory-entry creation/removal is denied; child writes stay usable.
+    for start in "${control_path:a}" "$resolved_path"; do
+      parent="${start:h}"
+      while [[ "$parent" != / && -n "$parent" ]]; do
+        protected_parents[$parent]=1
+        # Resolve the containing directory without following the entry itself.
+        # This pins intermediate symlinks in multi-hop directory layouts too.
+        container="${parent:h}"
+        if [[ ${+resolved_containers[$container]} -eq 0 ]]; then
+          resolved_containers[$container]="$(readlink -f "$container" 2>/dev/null)" || resolved_containers[$container]=""
+        fi
+        physical_container="${resolved_containers[$container]}"
+        if [[ -n "$physical_container" && "$physical_container" != "$container" ]]; then
+          partial_entry="${physical_container%/}/${parent:t}"
+          protected_parents[$partial_entry]=1
+          physical_parent="$physical_container"
+          while [[ "$physical_parent" != / && -n "$physical_parent" ]]; do
+            protected_parents[$physical_parent]=1
+            physical_parent="${physical_parent:h}"
+          done
+        fi
+        parent="${parent:h}"
+      done
+    done
+  done
+  for protected_parent in "${(@ok)protected_parents}"; do
+    assembled+=$'\n;; Prevent replacement of a sandbox control-path ancestor\n(deny file-write-create file-write-unlink (literal '"$(__rollcage_quote_sbpl "$protected_parent")"'))'
+  done
+  if [[ -n "$main_worktree" ]]; then
+    assembled+=$'\n;; Protect shared Git hooks and config after generated grants\n(deny file-write* (subpath '"$(__rollcage_quote_sbpl "${common_dir}/hooks")"'))'
+    assembled+=$'\n;; Protect shared Git configuration after generated grants\n(deny file-write* (literal '"$(__rollcage_quote_sbpl "${common_dir}/config")"'))'
+  fi
+  printf '%s\n' "$assembled"
+}
+
+# Escape filesystem paths embedded by the assembler, preserving literal SBPL.
+__rollcage_quote_sbpl() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  print -r -- "\"${value}\""
 }
