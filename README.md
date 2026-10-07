@@ -294,7 +294,7 @@ allow-exec  ~/.local/bin/custom    # read + exec access
 | `node` | NVM, npm/npx, Corepack, and pnpm (including native pnpm 12); macOS dependency/engine stores under `~/Library/pnpm`, legacy/XDG stores, and read-only pnpm configuration. See [pnpm configuration and sandbox scope](docs/pnpm.md). |
 | `bun` | Bun runtime and install cache (`~/.bun`) |
 | `uv` | uv/uvx, cache (`~/Library/Caches/uv`, `~/.local/share/uv`). `~/.local/bin` is read+exec only — `uv tool install` symlinks are redirected to `~/.local/share/uv/bin/` via `UV_TOOL_BIN_DIR` to prevent binary overwrite attacks |
-| `python` | pyenv (`~/.pyenv`) |
+| `python` | pyenv (`~/.pyenv`) and python.org Framework interpreters (`/Library/Frameworks/Python.framework`, read/exec only) |
 | `rust` | Cargo (`~/.cargo`), rustup (`~/.rustup` read+exec; distribution state writable for pinned toolchain installs, settings read-only), and the C linker (clang/ld via Xcode or Command Line Tools, read+exec) that `cargo build` invokes to link native binaries |
 | `go` | Go toolchain (`/usr/local/go`, `~/go`), build cache (`~/.cache/go-build`) |
 | `swift` | SwiftPM via Xcode or Command Line Tools, SwiftPM caches/config (`~/Library/{Caches/,}org.swift.swiftpm`, `~/.swiftpm`). Pass `--disable-sandbox` to swift commands — macOS forbids nested `sandbox-exec` |

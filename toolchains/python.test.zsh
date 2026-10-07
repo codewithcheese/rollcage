@@ -1,4 +1,4 @@
-# Python (pyenv) toolchain sandbox tests
+# Python (pyenv and python.org Framework) toolchain sandbox tests
 tc_setup python
 
 tc_fixture_dir "${HOME}/.pyenv/shims"
@@ -53,6 +53,24 @@ if [[ -n "$__pyenv_python" ]]; then
   expect_success "import" tc_sandboxed "$__pyenv_python" -c "import json; print(json.dumps({'ok': True}))"
 else
   echo "SKIP: no pyenv-managed python3 found — skipping python exec tests" >&2
+fi
+
+# python.org's Current link resolves to its installed version before policy match.
+__framework_python="/Library/Frameworks/Python.framework/Versions/Current/bin/python3"
+if [[ -x "$__framework_python" ]]; then
+  t "python: Framework python --version"
+  expect_success "runs" tc_sandboxed "$__framework_python" --version
+
+  t "python: Framework python stdlib and project output"
+  expect_success "compute and write" tc_sandboxed "$__framework_python" -c \
+    "import json, pathlib, ssl, sqlite3; value = 6 * 7; pathlib.Path('framework-result.json').write_text(json.dumps(value)); assert json.loads(pathlib.Path('framework-result.json').read_text()) == 42"
+  rm -f "${PROJECT_DIR}/framework-result.json"
+
+  t "python: Framework interpreter retains home isolation"
+  expect_fail "blocked" tc_sandboxed "$__framework_python" -c \
+    "from pathlib import Path; Path.home().joinpath('.ssh/known_hosts').read_bytes()"
+else
+  echo "SKIP: no python.org Framework interpreter found" >&2
 fi
 
 # ── Isolation ──

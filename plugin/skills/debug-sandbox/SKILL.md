@@ -45,7 +45,7 @@ Comments start with `#`. Blank lines are ignored.
 | `node` | NVM, npm/npx, Corepack; pnpm macOS `~/Library/pnpm/{store,package-manager-store,.tools/pnpm}` read+write+exec, engine lockfile and atomic temps in `global/v11`, `~/.pnpm-state` read+write; legacy/XDG stores; pnpm config (`~/.config/pnpm`, `~/Library/Preferences/pnpm`) read-only. Global apps/bins are not granted by the macOS rules. See `docs/pnpm.md`. |
 | `bun` | Bun runtime and install cache (`~/.bun`) |
 | `uv` | uv/uvx, cache (`~/Library/Caches/uv`, `~/.local/share/uv`). `~/.local/bin` is read+exec only |
-| `python` | pyenv (`~/.pyenv`) |
+| `python` | pyenv (`~/.pyenv`) and python.org Framework interpreters (`/Library/Frameworks/Python.framework`, read/exec only) |
 | `rust` | Cargo (`~/.cargo`), rustup (`~/.rustup` read+exec; distribution state writable for pinned toolchain installs, settings read-only), and the C linker (clang/ld via Xcode.app + Command Line Tools, read+exec) that `cargo build` invokes to link native binaries |
 | `go` | Go toolchain (`/usr/local/go`, `~/go`), build cache (`~/.cache/go-build`) |
 | `swift` | SwiftPM via Xcode or Command Line Tools, caches/config (`~/Library/{Caches/,}org.swift.swiftpm`, `~/.swiftpm`), narrow TMPDIR exec for the manifest binary. Requires `--disable-sandbox` on swift commands (macOS forbids nested `sandbox-exec`) |

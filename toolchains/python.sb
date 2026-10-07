@@ -1,4 +1,4 @@
-;; Python toolchain (pyenv)
+;; Python toolchain (pyenv and python.org macOS installers)
 ;;
 ;; pyenv manages multiple Python versions at ~/.pyenv/versions/.
 ;; Shims at ~/.pyenv/shims/ intercept `python` commands and
@@ -6,10 +6,17 @@
 ;; pyenv binary itself is typically at /opt/homebrew/bin/pyenv
 ;; (base profile covers this), but managed Pythons need exec
 ;; from ~/.pyenv/.
+;; python.org installs versioned interpreters under
+;; /Library/Frameworks/Python.framework; base-common already reads /Library.
 
 ;; Exec — pyenv-managed Python interpreters and shims
 (allow process-exec
   (subpath (string-append (param "HOME") "/.pyenv")))
+
+;; Exec — python.org Framework interpreters, including version/Current symlinks.
+;; This grant does not permit writes to the installed Framework.
+(allow process-exec
+  (subpath "/Library/Frameworks/Python.framework"))
 
 ;; Read — pyenv config, versions, and shims
 (allow file-read-data
