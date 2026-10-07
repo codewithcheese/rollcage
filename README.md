@@ -248,6 +248,10 @@ Nonstandard `XDG_*` or `OPENCODE_CONFIG*` paths are not converted into implicit 
 
 Create a `.xclaude` file in your project root to declare toolchains and extra paths.
 
+For a repository-audit workflow—including inspecting Codex session history,
+resolving symlinked paths, selecting least-privilege rules, and testing the
+assembled profile—see [Creating a `.xclaude` rule set for Codex](docs/creating-xclaude-rules-for-codex.md).
+
 ### DSL
 
 ```sh
