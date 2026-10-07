@@ -172,6 +172,14 @@ t "write Codex state"
 expect_success "allowed" sandboxed touch "${HOME}/.codex/xcodex-test-write-$$"
 rm -f "${HOME}/.codex/xcodex-test-write-$$"
 
+t "acquire and release Codex session file lock"
+expect_success "allowed" sandboxed /usr/bin/perl -e '
+use Fcntl qw(:flock);
+open(my $lock, "+<", $ARGV[0]) or die "open: $!";
+flock($lock, LOCK_EX | LOCK_NB) or die "lock: $!";
+flock($lock, LOCK_UN) or die "unlock: $!";
+' "${HOME}/.codex/xcodex-test-readable-$$"
+
 t "user-level cross-agent skills remain read-only"
 expect_fail "blocked" sandboxed touch "${HOME}/.agents/skills/xcodex-test-$$/test-write"
 
