@@ -1,0 +1,12 @@
+;; Metal shader compilation
+;;
+;; Metal may send source compilation to MTLCompilerService. The caller must
+;; issue a read-write sandbox extension for the compiler's cache even though
+;; the base profile already permits direct writes to CACHE_DIR. Keep that
+;; extension limited to Metal's frontend cache, not the whole user cache.
+
+;; Let Metal grant its compiler service access to compiled module files.
+(allow file-issue-extension
+  (require-all
+    (extension-class "com.apple.app-sandbox.read-write")
+    (subpath (string-append (param "CACHE_DIR") "/com.apple.metalfe"))))

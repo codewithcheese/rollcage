@@ -295,6 +295,7 @@ allow-exec  ~/.local/bin/custom    # read + exec access
 | `bun` | Bun runtime and install cache (`~/.bun`) |
 | `uv` | uv/uvx, cache (`~/Library/Caches/uv`, `~/.local/share/uv`). `~/.local/bin` is read+exec only — `uv tool install` symlinks are redirected to `~/.local/share/uv/bin/` via `UV_TOOL_BIN_DIR` to prevent binary overwrite attacks |
 | `python` | pyenv (`~/.pyenv`) and python.org Framework interpreters (`/Library/Frameworks/Python.framework`, read/exec only) |
+| `metal` | Let Metal issue a read-write sandbox extension limited to `CACHE_DIR/com.apple.metalfe` for its compiler service. Pair with `allow-exec /Applications/Xcode.app/Contents/Developer` when using `xcrun` with full Xcode. |
 | `rust` | Cargo (`~/.cargo`), rustup (`~/.rustup` read+exec; distribution state writable for pinned toolchain installs, settings read-only), and the C linker (clang/ld via Xcode or Command Line Tools, read+exec) that `cargo build` invokes to link native binaries |
 | `go` | Go toolchain (`/usr/local/go`, `~/go`), build cache (`~/.cache/go-build`) |
 | `swift` | SwiftPM via Xcode or Command Line Tools, SwiftPM caches/config (`~/Library/{Caches/,}org.swift.swiftpm`, `~/.swiftpm`). Pass `--disable-sandbox` to swift commands — macOS forbids nested `sandbox-exec` |
@@ -447,8 +448,8 @@ The agent-specific wrappers also set `XCODEX_ACTIVE=1`, `XPI_ACTIVE=1`, `XOMP_AC
 | `HOME` | `/Users/<you>` |
 | `PROJECT_DIR` | Absolute path of the project (resolved with `readlink -f`) |
 | `TMPDIR` | `/private/var/folders/<...>/T/` |
-| `CACHE_DIR` | `/private/var/folders/<...>/C/` (sibling of TMPDIR — Spotlight/mds, keychain) |
-| `VOLATILE_DIR` | `/private/var/folders/<...>/X/` (sibling of TMPDIR — code-signing clones, Metal shader cache) |
+| `CACHE_DIR` | `/private/var/folders/<...>/C/` (sibling of TMPDIR — Spotlight/mds, keychain, direct Metal cache writes) |
+| `VOLATILE_DIR` | `/private/var/folders/<...>/X/` (sibling of TMPDIR — code-signing clones) |
 | `XCLAUDE_DIR` | Absolute path of the xclaude installation (used to allow the bundled plugin) |
 | `XOMP_DIR` | Absolute path of the xomp installation |
 | `XOPENCODE_DIR` | Absolute path of the xopencode installation |

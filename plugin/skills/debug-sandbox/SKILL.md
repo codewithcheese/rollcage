@@ -46,6 +46,7 @@ Comments start with `#`. Blank lines are ignored.
 | `bun` | Bun runtime and install cache (`~/.bun`) |
 | `uv` | uv/uvx, cache (`~/Library/Caches/uv`, `~/.local/share/uv`). `~/.local/bin` is read+exec only |
 | `python` | pyenv (`~/.pyenv`) and python.org Framework interpreters (`/Library/Frameworks/Python.framework`, read/exec only) |
+| `metal` | Metal compiler cache: allows issuing a read-write sandbox extension only for `CACHE_DIR/com.apple.metalfe`; direct cache writes are already in the base profile. For `xcrun` with full Xcode, add `allow-exec /Applications/Xcode.app/Contents/Developer` in project config. |
 | `rust` | Cargo (`~/.cargo`), rustup (`~/.rustup` read+exec; distribution state writable for pinned toolchain installs, settings read-only), and the C linker (clang/ld via Xcode.app + Command Line Tools, read+exec) that `cargo build` invokes to link native binaries |
 | `go` | Go toolchain (`/usr/local/go`, `~/go`), build cache (`~/.cache/go-build`) |
 | `swift` | SwiftPM via Xcode or Command Line Tools, caches/config (`~/Library/{Caches/,}org.swift.swiftpm`, `~/.swiftpm`), narrow TMPDIR exec for the manifest binary. Requires `--disable-sandbox` on swift commands (macOS forbids nested `sandbox-exec`) |
@@ -70,13 +71,13 @@ Do NOT add rules for these — they are always available:
 
 **Exec:** `/bin`, `/usr/bin`, `/opt/homebrew`, `~/.local/bin/claude`, `~/.local/share/claude`, project scripts
 **Read:** System paths (`/System`, `/Library`, `/usr`, `/bin`, `/opt/homebrew`), project directory, Claude config (`~/.claude`), xclaude user config (`~/.config/xclaude`), git config, shell rc files, tmp dirs, keychain. All launchers can read the shared user config file `~/.config/xclaude/config`; symlink targets still need explicit read grants.
-**Write:** Project directory, Claude state (`~/.claude`), tmp dirs, volatile dir (`/private/var/folders/.../X/` — code-signing clones, Metal shader cache)
+**Write:** Project directory, Claude state (`~/.claude`), tmp dirs, `CACHE_DIR` (`/private/var/folders/.../C/` — direct Metal cache writes), and `VOLATILE_DIR` (`.../X/` — code-signing clones). Metal's compiler service also needs `tool metal` to issue a scoped cache extension.
 **Other:** `dynamic-code-generation` (JIT/WASM), all network/POSIX IPC/Mach, TMPDIR + CACHE_DIR + VOLATILE_DIR (parameterized per-session). System V IPC remains opt-in through toolchains such as `postgres`
 **Protected (deny-after-allow):** `.xclaude`, `.env*` files, `.git/hooks/`
 
 > The list above is for `xclaude` (Claude Code). `xcodex` swaps in `~/.codex` (read+write), `~/.agents/skills` (read-only), its install paths under `~/.nvm`, `~/.bun`, `~/.local/bin`, `/usr/local/{bin,lib/node_modules}/codex`, and the two ChatGPT-bundled Node REPL executables plus their read-only `node_modules` tree. `xpi` swaps in `~/.pi` (read+write) with `process-exec` scoped narrowly to `~/.pi/agent/{npm,git,extensions}`, plus install paths under `~/.nvm`, `~/.local/bin`, `~/.local/share/pi-node`, and `/usr/local/{bin,lib/node_modules}/@earendil-works/pi-coding-agent`. `xomp` swaps in `~/.omp` (read+write), keeps OMP's SQLite credential store there, and scopes execution to documented OMP installs, plugins/extensions/hooks/tools, the managed Python environment, OMP-downloaded browsers under `~/.omp/puppeteer`, and Apple debugger binaries. System Google Chrome remains opt-in through `tool chrome`. It does not grant `~/.codex` or Keychain access because OMP's Codex OAuth flow persists independently in `~/.omp/agent/agent.db`. `xopencode` grants read+write only to OpenCode's default config/data/state/cache roots, read-only cross-agent skill discovery, exact execution of the resolved CLI, and execution under `~/.cache/opencode/bin`; it does not grant Codex auth or Keychain access. Project `.xclaude` is the shared trust-gated config for all five.
 
-If a denial is for a path under `/private/var/folders`, it is likely already covered by TMPDIR (.../T/), CACHE_DIR (.../C/), or VOLATILE_DIR (.../X/). Do NOT suggest project rules for these paths.
+If a denial is for a path under `/private/var/folders`, it is likely already covered by TMPDIR (.../T/), CACHE_DIR (.../C/), or VOLATILE_DIR (.../X/). Do NOT suggest project rules for these paths. For `com.apple.metalfe/monolithic_metal.pcm`, check whether `tool metal` is active; direct cache writes alone do not grant the `file-issue-extension` operation used by Metal's compiler service.
 
 # Validation constraints
 
